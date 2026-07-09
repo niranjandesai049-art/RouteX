@@ -1,0 +1,97 @@
+name: RouteX CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    # Backend Tasks
+    - name: Install Backend Dependencies
+      run: |
+        cd routex-backend
+        npm ci
+
+    - name: Lint Backend
+      run: |
+        cd routex-backend
+        npm run lint
+
+    - name: Build Backend
+      run: |
+        cd routex-backend
+        npm run build
+
+    - name: Test Backend
+      run: |
+        cd routex-backend
+        npm run test
+
+    # Frontend Tasks
+    - name: Install Frontend Dependencies
+      run: |
+        cd routex-web
+        npm ci
+
+    - name: Lint Frontend
+      run: |
+        cd routex-web
+        npm run lint
+
+    - name: Build Frontend
+      run: |
+        cd routex-web
+        npm run build
+
+  build-and-push-docker:
+    needs: test-and-lint
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # In production, login to AWS ECR or Docker Hub
+    # - name: Login to DockerHub
+    #   uses: docker/login-action@v3
+    #   with:
+    #     username: ${{ secrets.DOCKERHUB_USERNAME }}
+    #     password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    - name: Build Backend Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./routex-backend
+        file: ./routex-backend/Dockerfile
+        push: false # Set true and configure login in production
+        tags: routex-backend:latest,routex-backend:${{ github.sha }}
+
+    - name: Build Frontend Docker Image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./routex-web
+        file: ./routex-web/Dockerfile
+        build-args: |
+          NEXT_PUBLIC_API_URL=http://localhost
+        push: false # Set true and configure login in production
+        tags: routex-frontend:latest,routex-frontend:${{ github.sha }}
+
+    - name: Notify Deployment Status
+      run: |
+        echo "RouteX Build and Docker packaging completed successfully for commit ${{ github.sha }}."

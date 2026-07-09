@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: routex-config
+  namespace: routex
+data:
+  PORT: "3001"
+  NODE_ENV: "production"
+  NEXT_PUBLIC_API_URL: "http://routex.production.internal"

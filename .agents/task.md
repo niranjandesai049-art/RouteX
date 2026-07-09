@@ -1,0 +1,21 @@
+# Socket.IO Real-Time Tracking - Checklist
+
+- `[x]` Install `socket.io-client` in `routex-web`
+- `[x]` Implement backend changes
+  - `[x]` Update `TrackingGateway` in `routex-backend/src/tracking/tracking.gateway.ts` (Already satisfied by existing gateway definition; connection logs and cleanup checked)
+  - `[x]` Update status transition triggers in `routex-backend/src/booking/booking.service.ts`
+  - `[x]` Update `/vehicles` query in `routex-backend/src/app.controller.ts`
+- `[x]` Implement frontend changes
+  - `[x]` Create `SocketContext` in `routex-web/src/context/SocketContext.tsx`
+  - `[x]` Wrap application in `SocketProvider` in `routex-web/src/app/layout.tsx`
+  - `[x]` Update `DriverMap.tsx` to emit real-time location telemetry
+  - `[x]` Update `ShipmentMap.tsx` to listen to live driver location events
+  - `[x]` Update `FleetMap.tsx` to display real-time truck positions
+  - `[x]` Update `LiveTrackingMap.tsx` to track bookings and drivers in real-time
+  - `[x]` Update `DriverDashboardPage` to listen to status socket events
+  - `[x]` Update `ShipperDashboardPage` to listen to status socket events
+  - `[x]` Update `AdminPanel.tsx` to listen to status socket events
+- `[/]` Verification
+  - `[x]` Run backend build `npm run build`
+  - `[ ]` Run frontend build `npm run build`
+  - `[ ]` Check end-to-end Socket.IO events and verify no errors

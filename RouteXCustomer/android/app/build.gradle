@@ -1,0 +1,73 @@
+apply plugin: "com.android.application"
+apply plugin: "com.facebook.react"
+apply plugin: "com.google.gms.google-services"
+
+apply from: project(':react-native-config').projectDir.getPath() + "/dotenv.gradle"
+
+react {
+    /* Folders */
+    // root = file("../")
+    // reactNativeDir = file("../node_modules/react-native")
+    // codegenDir = file("../node_modules/@react-native/codegen")
+    // cliFile = file("../node_modules/react-native/cli.js")
+
+    /* Variants */
+    // debugableVariants = ["liteDebug", "prodDebug"]
+
+    /* Bundling */
+    // nodeExecutableAndArgs = ["node"]
+    // extraPackagerArgs = []
+    // hermesCommand = "$rootDir/my-custom-hermesc"
+    // enableHermes = true
+}
+
+def enableProguardInReleaseBuilds = false
+def jscDist = file("../node_modules/jsc-android/dist")
+
+android {
+    ndkVersion rootProject.ext.ndkVersion
+    compileSdkVersion rootProject.ext.compileSdkVersion
+
+    namespace "com.routex.driver"
+    defaultConfig {
+        applicationId "com.routex.driver"
+        minSdkVersion rootProject.ext.minSdkVersion
+        targetSdkVersion rootProject.ext.targetSdkVersion
+        versionCode 1
+        versionName "1.0.0"
+
+    }
+
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
+    buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
+        release {
+            minifyEnabled enableProguardInReleaseBuilds
+            proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
+        }
+    }
+}
+
+dependencies {
+    // The version of react-native is set by the React Native Gradle Plugin
+    implementation("com.facebook.react:react-android")
+
+    if (hermesEnabled.toBoolean()) {
+        implementation("com.facebook.react:hermes-android")
+    } else {
+        implementation jscDist
+    }
+}
+
+apply from: file("../../node_modules/@react-native-community/cli-platform-android/native_modules.gradle"); applyNativeModulesAppBuildGradle(project)
+apply from: "../../node_modules/react-native-vector-icons/fonts.gradle"

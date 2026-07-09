@@ -1,0 +1,54 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: routex-backend-policy
+  namespace: routex
+spec:
+  podSelector:
+    matchLabels:
+      app: routex-backend
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: routex-frontend
+    # Also allow external ingress traffic
+    ports:
+    - protocol: TCP
+      port: 3001
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: routex-postgres-policy
+  namespace: routex
+spec:
+  podSelector:
+    matchLabels:
+      app: routex-postgres
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: routex-backend
+    ports:
+    - protocol: TCP
+      port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: routex-redis-policy
+  namespace: routex
+spec:
+  podSelector:
+    matchLabels:
+      app: routex-redis
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: routex-backend
+    ports:
+    - protocol: TCP
+      port: 6379

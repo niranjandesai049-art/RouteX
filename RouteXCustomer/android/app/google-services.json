@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "519608133226",
+    "project_id": "routex-a0bc3",
+    "storage_bucket": "routex-a0bc3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:519608133226:android:e4f81093313a5c4f9ccc13",
+        "android_client_info": {
+          "package_name": "com.routex.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyARBzFoDU4F-ASRCOE7iHHOcQ1RVBzIAug"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

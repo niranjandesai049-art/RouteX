@@ -1,0 +1,27 @@
+# Compiled output
+dist/
+node_modules/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files
+.env
+.env.local
+
+# Firebase Service Account credentials (NEVER commit)
+firebase-service-account.json
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Scratch helper scripts
+scratch/
