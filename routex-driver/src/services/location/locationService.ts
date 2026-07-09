@@ -87,7 +87,9 @@ class LocationService {
           async position => {
             const { latitude, longitude, heading, speed } = position.coords;
             const currentSpeed = speed || 0;
-            console.log(`GPS Update: Lat ${latitude}, Lon ${longitude}, Speed ${currentSpeed}`);
+            console.log(
+              `GPS Update: Lat ${latitude}, Lon ${longitude}, Speed ${currentSpeed}`,
+            );
 
             // Dynamic interval scaling for battery optimization
             // 5 seconds when moving, 30 seconds when stationary
@@ -107,7 +109,9 @@ class LocationService {
             try {
               // Try to sync cached offline locations first if connectivity is back
               if (this.offlineCache.length > 0) {
-                console.log(`Reconnecting: Syncing ${this.offlineCache.length} cached positions...`);
+                console.log(
+                  `Reconnecting: Syncing ${this.offlineCache.length} cached positions...`,
+                );
                 const pendingSyncs = [...this.offlineCache];
                 for (const cached of pendingSyncs) {
                   await BookingsApi.updateLocation(
@@ -127,7 +131,10 @@ class LocationService {
                 currentSpeed,
               );
             } catch (err: any) {
-              console.warn('HTTP Geolocation report failed. Saving to cache:', err.message);
+              console.warn(
+                'HTTP Geolocation report failed. Saving to cache:',
+                err.message,
+              );
               // Save to offline breadcrumbs cache (capped at 100 entries)
               if (this.offlineCache.length < 100) {
                 this.offlineCache.push({
