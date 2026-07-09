@@ -14,7 +14,7 @@ import {
   Prisma,
 } from '@prisma/client';
 import { TrackingGateway } from '../tracking/tracking.gateway';
-import { IsString, IsNotEmpty, IsNumber, Min } from 'class-validator';
+import { IsString, IsNotEmpty, IsNumber, Min, IsArray, IsOptional } from 'class-validator';
 import { NotificationService } from '../firebase/notification.service';
 import { MapService } from '../map/map.service';
 import { DriversService } from '../drivers/drivers.service';
@@ -32,6 +32,9 @@ export class CreateBookingDto {
   @IsString()
   destAddress: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   waypoints?: string[];
 
   @IsNotEmpty()
