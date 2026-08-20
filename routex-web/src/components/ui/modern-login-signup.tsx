@@ -246,18 +246,28 @@ export function ModernLoginSignup({
                   </div>
                 )}
 
-                {/* Name Input */}
+                {/* Name / Company / Transporter Input */}
                 {setName && (
                   <div className="space-y-1">
                     <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">
-                      Full Legal Name
+                      {role === 'shipper'
+                        ? 'Company Name'
+                        : role === 'fleet_owner'
+                        ? 'Transporter Name'
+                        : 'Full Legal Name'}
                     </label>
                     <div className="flex items-center bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5 focus-within:bg-white focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-500/10 transition-all">
                       <User className="text-slate-400 mr-3 shrink-0" size={16} />
                       <input
                         type="text"
                         required
-                        placeholder="Ramesh Sharma"
+                        placeholder={
+                          role === 'shipper'
+                            ? 'e.g. Acme Freight Logistics'
+                            : role === 'fleet_owner'
+                            ? 'e.g. Sharma Roadways'
+                            : 'e.g. Ramesh Sharma'
+                        }
                         value={name}
                         onChange={(e) => setName(e.target.value)}
                         className="w-full bg-transparent text-slate-900 text-xs font-semibold focus:outline-none placeholder-slate-400"
