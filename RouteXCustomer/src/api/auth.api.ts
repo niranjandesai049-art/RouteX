@@ -56,6 +56,30 @@ export class AuthApi {
     return response.data;
   }
 
+  static async sendBackendOtp(phone: string): Promise<{ success: boolean; message: string; verificationId: string; devOtp?: string }> {
+    const response = await apiClient.post('/auth/phone/send-otp', {
+      phoneNumber: phone,
+      phone,
+    });
+    return response.data;
+  }
+
+  static async verifyBackendOtp(
+    phone: string,
+    otp: string,
+    verificationId?: string,
+    role: string = 'shipper',
+  ): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>('/auth/phone/verify-otp', {
+      phoneNumber: phone,
+      phone,
+      otp,
+      verificationId,
+      role,
+    });
+    return response.data;
+  }
+
   static async getProfile() {
     const response = await apiClient.get('/users/profile');
     return response.data;

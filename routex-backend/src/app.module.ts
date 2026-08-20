@@ -15,6 +15,7 @@ import { TrackingModule } from './tracking/tracking.module';
 import { AiModule } from './ai/ai.module';
 import { AiPricingModule } from './ai-pricing/ai-pricing.module';
 import { FirebaseModule } from './firebase/firebase.module';
+import { NotificationsModule } from './notifications/notifications.module';
 import { MapModule } from './map/map.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { MapModule } from './map/map.module';
     MapModule,
     PrismaModule,
     AuthModule,
+    NotificationsModule,
     UsersModule,
     CompaniesModule,
     DriversModule,

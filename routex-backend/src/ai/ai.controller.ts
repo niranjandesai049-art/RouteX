@@ -100,4 +100,20 @@ export class AiController {
   async predictEta(@Body() dto: CreateEtaDto): Promise<EtaResult> {
     return this.pricingService.predictEta(dto);
   }
+
+  @Post('insights')
+  @ApiOperation({
+    summary: 'Generate dynamic recommendations and insights for fleet optimization using Groq AI',
+  })
+  async getFleetInsights(
+    @Body() body: {
+      totalTrucks: number;
+      activeTrucks: number;
+      idleTrucks: number;
+      fuelSpentLiters: number;
+      totalRevenue: number;
+    },
+  ) {
+    return this.pricingService.getFleetInsights(body);
+  }
 }

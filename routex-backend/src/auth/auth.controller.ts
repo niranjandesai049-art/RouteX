@@ -1,66 +1,105 @@
 import {
   Controller,
   Post,
+  Get,
+  Delete,
   Body,
   HttpCode,
   HttpStatus,
-  Headers,
-  UnauthorizedException,
+  UseGuards,
+  Request,
+  Query,
+  BadRequestException,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiProperty,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiProperty, ApiBearerAuth } from '@nestjs/swagger';
 import { user_role } from '@prisma/client';
-import { IsString, IsNotEmpty, IsEnum, IsOptional } from 'class-validator';
+import { IsString, IsNotEmpty, IsEnum, IsOptional, IsEmail } from 'class-validator';
+import { JwtAuthGuard } from './jwt-auth.guard';
 
-class LoginDto {
-  @ApiProperty({
-    example: '9876543210',
-    description: 'Driver or Shipper mobile number',
-  })
-  @IsNotEmpty()
+class SendPhoneOtpDto {
+  @ApiProperty({ example: '+919322468515', required: false })
+  @IsOptional()
   @IsString()
-  phone: string;
+  phoneNumber?: string;
+
+  @ApiProperty({ example: '9322468515', required: false })
+  @IsOptional()
+  @IsString()
+  phone?: string;
 }
 
-class RegisterDto {
-  @ApiProperty({
-    example: 'Ramesh Sharma',
-    description: 'Legal name of the user',
-  })
+class VerifyPhoneOtpDto {
+  @ApiProperty({ example: '+919322468515', required: false })
+  @IsOptional()
+  @IsString()
+  phoneNumber?: string;
+
+  @ApiProperty({ example: '9322468515', required: false })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiProperty({ example: '123456', description: '6-digit OTP' })
   @IsNotEmpty()
   @IsString()
-  name: string;
+  otp: string;
 
-  @ApiProperty({
-    example: '9876543210',
-    description: 'Unique mobile phone number',
-  })
-  @IsNotEmpty()
+  @ApiProperty({ example: 'verification-uuid-123', required: false })
+  @IsOptional()
   @IsString()
-  phone: string;
+  verificationId?: string;
 
-  @ApiProperty({
-    enum: user_role,
-    example: user_role.shipper,
-    description: 'Role of user',
-  })
-  @IsNotEmpty()
-  @IsEnum(user_role)
-  role: user_role;
+  @ApiProperty({ example: 'device-id-xyz', required: false })
+  @IsOptional()
+  @IsString()
+  deviceId?: string;
 
-  @ApiProperty({
-    example: 'ramesh@gmail.com',
-    required: false,
-    description: 'Email address',
-  })
+  @ApiProperty({ example: 'shipper', required: false })
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @ApiProperty({ example: 'Ramesh Sharma', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ example: 'ramesh@gmail.com', required: false })
   @IsOptional()
   @IsString()
   email?: string;
+}
+
+class RefreshTokenDto {
+  @ApiProperty({ example: 'rt_xxxx-xxxx' })
+  @IsNotEmpty()
+  @IsString()
+  refreshToken: string;
+}
+
+class SendEmailVerificationDto {
+  @ApiProperty({ example: 'user@company.com' })
+  @IsNotEmpty()
+  @IsEmail()
+  email: string;
+}
+
+class RegisterPushTokenDto {
+  @ApiProperty({ example: 'device-uuid-123' })
+  @IsNotEmpty()
+  @IsString()
+  deviceId: string;
+
+  @ApiProperty({ example: 'fcm-push-token-abc' })
+  @IsNotEmpty()
+  @IsString()
+  token: string;
+
+  @ApiProperty({ example: 'android', enum: ['android', 'ios', 'web'] })
+  @IsNotEmpty()
+  @IsString()
+  platform: 'android' | 'ios' | 'web';
 }
 
 @ApiTags('Authentication')
@@ -68,69 +107,120 @@ class RegisterDto {
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Post('phone/send-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send 6-digit OTP to phone number via SMS' })
+  @ApiResponse({ status: 200, description: 'OTP sent successfully.' })
+  @ApiResponse({ status: 400, description: 'Invalid phone number or rate limited.' })
+  async sendPhoneOtp(@Body() body: SendPhoneOtpDto) {
+    const inputPhone = body.phoneNumber || body.phone;
+    if (!inputPhone) {
+      throw new BadRequestException('Please enter a valid Indian mobile number.');
+    }
+    return this.authService.sendPhoneOtp(inputPhone);
+  }
+
+  @Post('phone/verify-otp')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify 6-digit OTP and issue JWT + Refresh Session' })
+  @ApiResponse({ status: 200, description: 'OTP verified. Session created.' })
+  @ApiResponse({ status: 400, description: 'Invalid OTP code or expired.' })
+  async verifyPhoneOtp(@Body() body: VerifyPhoneOtpDto) {
+    const inputPhone = body.phoneNumber || body.phone;
+    if (!inputPhone && !body.verificationId) {
+      throw new BadRequestException('Phone number or verification ID is required.');
+    }
+    return this.authService.verifyPhoneOtp(
+      inputPhone || '',
+      body.otp,
+      body.verificationId,
+      body.deviceId,
+      body.role,
+      body.name,
+      body.email,
+    );
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Rotate refresh token and issue new access token' })
+  async refreshSession(@Body() body: RefreshTokenDto) {
+    return this.authService.refreshSession(body.refreshToken);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke current session refresh token' })
+  async logoutSession(@Body() body: RefreshTokenDto) {
+    return this.authService.logoutSession(body.refreshToken);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('logout-all')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Revoke all sessions for authenticated user' })
+  async logoutAllSessions(@Request() req: any) {
+    return this.authService.logoutAllSessions(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('me')
+  @ApiOperation({ summary: 'Get current authenticated user profile and roles' })
+  async getMe(@Request() req: any) {
+    return this.authService.getMe(req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('email/send-verification')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Send email verification link' })
+  async sendEmailVerification(@Request() req: any, @Body() body: SendEmailVerificationDto) {
+    return this.authService.sendEmailVerification(req.user.id, body.email);
+  }
+
+  @Post('email/verify')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Verify email token' })
+  async verifyEmail(@Query('userId') userId: string, @Query('token') token: string) {
+    return this.authService.verifyEmailToken(userId, token);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('push-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Register device push token' })
+  async registerPushToken(@Request() req: any, @Body() body: RegisterPushTokenDto) {
+    return this.authService.registerPushToken(req.user.id, body.deviceId, body.token, body.platform);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Delete('push-token')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Remove device push token' })
+  async removePushToken(@Request() req: any, @Query('deviceId') deviceId: string) {
+    return this.authService.removePushToken(req.user.id, deviceId);
+  }
+
+  // Legacy compatibility routes
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Login with mobile number (OTP bypass simulation)' })
-  @ApiResponse({ status: 200, description: 'Bearer JWT token returned.' })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid phone number or not registered.',
-  })
-  async login(@Body() body: LoginDto) {
-    return this.authService.login(body.phone);
+  @ApiOperation({ summary: 'Legacy mobile login' })
+  async login(@Body() body: SendPhoneOtpDto) {
+    const inputPhone = body.phoneNumber || body.phone;
+    if (!inputPhone) {
+      throw new BadRequestException('Please enter a valid Indian mobile number.');
+    }
+    return this.authService.login(inputPhone);
   }
 
   @Post('register')
-  @ApiOperation({
-    summary: 'Register new user account (Shipper / Driver / FleetOwner)',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'User successfully created and token returned.',
-  })
-  @ApiResponse({ status: 409, description: 'Phone number already registered.' })
-  async register(@Body() body: RegisterDto) {
+  @ApiOperation({ summary: 'Legacy registration route' })
+  async register(@Body() body: any) {
     return this.authService.register(body);
-  }
-
-  @Post('clerk-sync')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Exchange a Clerk JWT for a RouteX backend JWT',
-    description:
-      'Verifies the Clerk session token, finds or auto-provisions the user profile, and returns a backend JWT compatible with all existing guards.',
-  })
-  @ApiResponse({ status: 200, description: 'Backend JWT returned.' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired Clerk token.' })
-  async clerkSync(@Headers('authorization') authHeader: string) {
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing Bearer token');
-    }
-    const clerkToken = authHeader.slice(7);
-    return this.authService.clerkSync(clerkToken);
-  }
-
-  @Post('firebase-sync')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Exchange a Firebase Phone Auth ID Token for a RouteX backend JWT',
-    description:
-      'Used by the RouteX Driver App. Verifies the Firebase ID token (issued after OTP verification), ' +
-      'finds or auto-provisions the driver profile, and returns a backend JWT for all protected API calls.',
-  })
-  @ApiResponse({
-    status: 200,
-    description: 'Backend JWT and driver profile returned.',
-  })
-  @ApiResponse({
-    status: 401,
-    description: 'Invalid or expired Firebase ID token.',
-  })
-  async firebaseSync(@Headers('authorization') authHeader: string) {
-    if (!authHeader?.startsWith('Bearer ')) {
-      throw new UnauthorizedException('Missing Bearer token');
-    }
-    const firebaseIdToken = authHeader.slice(7);
-    return this.authService.firebaseSync(firebaseIdToken);
   }
 }

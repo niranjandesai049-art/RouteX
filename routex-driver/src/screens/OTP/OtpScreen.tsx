@@ -35,7 +35,13 @@ export default function OtpScreen({ navigation, route }: Props) {
   const [resending, setResending] = useState(false);
   const inputRefs = useRef<(TextInput | null)[]>(Array(OTP_LENGTH).fill(null));
 
-  const { state, error, verifyOtp, sendOtp, resetState } = useFirebaseAuth();
+  const { state, error, devOtp, verifyOtp, sendOtp, resetState } = useFirebaseAuth();
+
+  useEffect(() => {
+    if (devOtp && devOtp.length === 6) {
+      setOtp(devOtp.split(''));
+    }
+  }, [devOtp]);
 
   const loading = state === 'verifying' || state === 'syncing';
   const isSuccess = state === 'success';

@@ -502,4 +502,44 @@ You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code 
       delayProbability: Math.min(0.99, delayProbability),
     };
   }
+
+  async getFleetInsights(data: {
+    totalTrucks: number;
+    activeTrucks: number;
+    idleTrucks: number;
+    fuelSpentLiters: number;
+    totalRevenue: number;
+  }) {
+    if (!this.groq) {
+      return {
+        insights: '• Optimize route distribution to decrease overall idle time.\n• Regularly inspect truck tires and tire pressure to save up to 4% on fuel.\n• Focus dispatch operations on high-value cargo routes during dry weather seasons.',
+      };
+    }
+
+    try {
+      const prompt = `You are a logistics fleet operations consultant for RouteX, India's AI-Powered Digital Freight Marketplace.
+Given the current fleet metrics:
+- Total Trucks: ${data.totalTrucks}
+- Active Trucks: ${data.activeTrucks}
+- Idle Trucks: ${data.idleTrucks}
+- Fuel Spent: ${data.fuelSpentLiters} Liters
+- Total Revenue: ₹${data.totalRevenue}
+
+Generate a concise, high-value bulleted list of 3-4 professional recommendations to improve fleet utilization, reduce fuel expenses, and optimize driver dispatch. Be direct and concise. Avoid introductory fluff.`;
+
+      const response = await this.groq.chat.completions.create({
+        model: 'llama-3.3-70b-versatile',
+        messages: [{ role: 'user', content: prompt }],
+        temperature: 0.7,
+      });
+
+      return {
+        insights: response.choices[0]?.message?.content || 'Check vehicle alignment and tires regularly to save fuel.',
+      };
+    } catch (err) {
+      return {
+        insights: '• Optimize route distribution to decrease overall idle time.\n• Regularly inspect truck tires and tire pressure to save up to 4% on fuel.\n• Focus dispatch operations on high-value cargo routes during dry weather seasons.',
+      };
+    }
+  }
 }

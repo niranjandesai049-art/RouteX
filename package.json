@@ -1,0 +1,14 @@
+{
+  "name": "routex-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "RouteX Logistics & Transportation Platform Monorepo Workspace",
+  "scripts": {
+    "dev": "npm run dev --prefix routex-web",
+    "dev:web": "npm run dev --prefix routex-web",
+    "dev:backend": "npm run start:dev --prefix routex-backend",
+    "build": "npm run build --prefix routex-web",
+    "build:web": "npm run build --prefix routex-web",
+    "build:backend": "npm run build --prefix routex-backend"
+  }
+}

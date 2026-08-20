@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import auth from '@react-native-firebase/auth';
 import { FirebaseAuthService } from '../services/firebase/firebaseAuth.service';
 import { AuthApi } from '../api/auth.api';
@@ -21,51 +21,71 @@ export type OtpFlowState =
 interface UseFirebaseAuthReturn {
   state: OtpFlowState;
   error: string | null;
+  devOtp: string | null;
   sendOtp: (phone: string) => Promise<void>;
   verifyOtp: (otp: string) => Promise<void>;
   resetState: () => void;
 }
 
 /**
- * useFirebaseAuth — encapsulates the full Firebase Phone OTP → Backend JWT flow.
- *
- * Usage:
- *   const { state, error, sendOtp, verifyOtp } = useFirebaseAuth();
+ * useFirebaseAuth — encapsulates the full Firebase Phone OTP → Backend JWT flow with RouteX backend OTP fallback.
  */
 export function useFirebaseAuth(): UseFirebaseAuthReturn {
   const dispatch = useDispatch();
   const [state, setState] = useState<OtpFlowState>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [devOtp, setDevOtp] = useState<string | null>(null);
+  const [currentPhone, setCurrentPhone] = useState<string>('');
+
+  const isBackendFallbackRef = useRef<boolean>(false);
+  const verificationIdRef = useRef<string | undefined>(undefined);
 
   const resetState = useCallback(() => {
     setState('idle');
     setError(null);
+    setDevOtp(null);
+    isBackendFallbackRef.current = false;
+    verificationIdRef.current = undefined;
   }, []);
 
   /**
-   * Step 1: Send OTP via Firebase
+   * Step 1: Send OTP via Firebase (with RouteX Backend Fallback)
    */
   const sendOtp = useCallback(async (phone: string) => {
     try {
       setState('sending');
       setError(null);
-      await FirebaseAuthService.sendOtp(phone);
+      setDevOtp(null);
+      setCurrentPhone(phone);
+
+      try {
+        await FirebaseAuthService.sendOtp(phone);
+        isBackendFallbackRef.current = false;
+      } catch (fbErr: any) {
+        console.warn('[AUTH] Firebase Phone Auth failed/disabled, falling back to RouteX Backend OTP:', fbErr?.message);
+        isBackendFallbackRef.current = true;
+
+        const res = await AuthApi.sendBackendOtp(phone);
+        if (res?.verificationId) {
+          verificationIdRef.current = res.verificationId;
+        }
+        if (res?.devOtp) {
+          setDevOtp(res.devOtp);
+        }
+      }
+
       setState('otp_sent');
     } catch (err: any) {
       const message =
-        err?.code === 'auth/invalid-phone-number'
-          ? 'Invalid phone number. Please enter a valid 10-digit number.'
-          : err?.code === 'auth/too-many-requests'
-          ? 'Too many attempts. Please try again later.'
-          : err?.message || 'Failed to send OTP. Please try again.';
-      setError(message);
+        err?.response?.data?.message || err?.message || 'Failed to send OTP. Please try again.';
+      setError(Array.isArray(message) ? message[0] : message);
       setState('error');
-      throw err; // throw so components can await and know it failed
+      throw err;
     }
   }, []);
 
   /**
-   * Step 2: Verify OTP, get Firebase ID token, exchange for backend JWT
+   * Step 2: Verify OTP, get credentials, update Redux + SecureStorage
    */
   const verifyOtp = useCallback(
     async (otp: string) => {
@@ -73,65 +93,67 @@ export function useFirebaseAuth(): UseFirebaseAuthReturn {
         setState('verifying');
         setError(null);
 
-        // Verify with Firebase (uses global session in service)
-        await FirebaseAuthService.verifyOtp(otp);
+        let response: any;
 
-        // Get ID token
-        setState('syncing');
-        const idToken = await FirebaseAuthService.getIdToken();
-        if (!idToken) {
-          throw new Error('Failed to retrieve Firebase ID token.');
+        if (isBackendFallbackRef.current) {
+          response = await AuthApi.verifyBackendOtp(currentPhone, otp, verificationIdRef.current, 'shipper');
+        } else {
+          await FirebaseAuthService.verifyOtp(otp);
+          setState('syncing');
+          const idToken = await FirebaseAuthService.getIdToken();
+          if (!idToken) {
+            throw new Error('Failed to retrieve Firebase ID token.');
+          }
+          response = await AuthApi.firebaseSync(idToken);
         }
 
-        // Exchange for backend JWT
-        const response = await AuthApi.firebaseSync(idToken);
         const { token, refreshToken, profile } = response;
 
-        // Persist to Redux + SecureStorage
         dispatch(
           setCredentials({
             token,
             refreshToken,
             driverId: profile.id,
-            name: `${profile.first_name} ${profile.last_name}`.trim(),
+            name: `${profile.first_name || ''} ${profile.last_name || ''}`.trim() || 'User',
             firebaseUid: auth().currentUser?.uid || null,
           }),
         );
         dispatch(
           setDriverProfile({
             id: profile.id,
-            firstName: profile.first_name,
-            lastName: profile.last_name,
-            email: profile.email,
-            phone: profile.phone,
-            licenseNumber: profile.license_number,
-            experienceYears: profile.experience_years,
-            status: profile.status as any,
-            vehicle: profile.vehicle,
+            firstName: profile.first_name || 'RouteX',
+            lastName: profile.last_name || 'User',
+            email: profile.email || '',
+            phone: profile.phone || currentPhone,
+            licenseNumber: profile.license_number || 'DL-PENDING',
+            experienceYears: profile.experience_years || 0,
+            status: (profile.status as any) || 'available',
+            vehicle: profile.vehicle || null,
           }),
         );
 
         await SecureStorage.saveTokens(token, refreshToken);
-        socketService.connect(profile.id, token);
-        await FcmService.getFcmTokenAndSync();
+        try {
+          socketService.connect(profile.id, token);
+          await FcmService.getFcmTokenAndSync();
+        } catch {}
 
         setState('success');
       } catch (err: any) {
         const message =
-          err?.code === 'auth/invalid-verification-code'
+          err?.response?.data?.message ||
+          (err?.code === 'auth/invalid-verification-code'
             ? 'Incorrect OTP. Please check and try again.'
             : err?.code === 'auth/code-expired'
             ? 'OTP has expired. Please request a new one.'
-            : err?.code === 'auth/session-expired'
-            ? 'OTP session expired. Please go back and try again.'
-            : err?.message || 'Verification failed. Please try again.';
-        setError(message);
+            : err?.message || 'Verification failed. Please try again.');
+        setError(Array.isArray(message) ? message[0] : message);
         setState('error');
         throw err;
       }
     },
-    [dispatch],
+    [dispatch, currentPhone],
   );
 
-  return { state, error, sendOtp, verifyOtp, resetState };
+  return { state, error, devOtp, sendOtp, verifyOtp, resetState };
 }

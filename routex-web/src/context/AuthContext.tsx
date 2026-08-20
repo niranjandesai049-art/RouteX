@@ -2,14 +2,16 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth as useClerkAuth, useUser } from '@clerk/nextjs';
 import { api } from '../lib/api';
 
 export interface UserResponse {
   id: string;
   name: string;
   phone: string;
+  email?: string;
   role: string;
+  phone_verified?: boolean;
+  email_verified?: boolean;
   isVerified: boolean;
 }
 
@@ -21,10 +23,19 @@ interface Toast {
 
 interface AuthContextType {
   user: UserResponse | null;
+  authenticated: boolean;
   loading: boolean;
-  /** @deprecated Use Clerk's useUser() hook directly for identity. This syncs with backend. */
+  role: string | null;
+  sendPhoneOtp: (phone: string) => Promise<{ success: boolean; message: string; verificationId?: string; devOtp?: string }>;
+  verifyPhoneOtp: (
+    phone: string,
+    otp: string,
+    verificationId?: string,
+    name?: string,
+    role?: string,
+    email?: string,
+  ) => Promise<void>;
   login: (phone: string) => Promise<void>;
-  /** @deprecated Registration is handled by Clerk's <SignUp /> component. */
   register: (name: string, phone: string, role: string, email?: string) => Promise<void>;
   logout: () => void;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
@@ -40,9 +51,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [toasts, setToasts] = useState<Toast[]>([]);
   const router = useRouter();
 
-  const { getToken, isSignedIn, isLoaded: clerkLoaded } = useClerkAuth();
-  const { user: clerkUser } = useUser();
-
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const id = Math.random().toString(36).substring(2, 9);
     setToasts((prev) => [...prev, { id, message, type }]);
@@ -52,127 +60,142 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const getDashboardRedirect = (role: string): string => {
-    switch (role) {
+    switch (role?.toLowerCase()) {
       case 'driver':
         return '/driver/dashboard';
       case 'shipper':
+      case 'company':
         return '/shipper/dashboard';
       case 'fleet_owner':
+      case 'transporter':
+      case 'truck_owner':
         return '/fleet/dashboard';
       case 'super_admin':
+      case 'admin':
         return '/admin/dashboard';
       default:
         return '/shipper/dashboard';
     }
   };
 
-  /**
-   * Exchange a Clerk JWT for a backend session token.
-   * The backend will verify the Clerk token, find-or-create the user profile,
-   * and return its own JWT for all subsequent API calls.
-   */
-  const syncWithBackend = useCallback(async () => {
-    if (!isSignedIn || !clerkUser) return;
+  const loadMe = useCallback(async (token: string) => {
     try {
-      const clerkToken = await getToken();
-      if (!clerkToken) return;
-
-      // POST to backend /auth/clerk-sync — backend verifies Clerk JWT and returns its own token
-      const response = await api.post<{ accessToken: string; user: UserResponse }>(
-        '/auth/clerk-sync',
-        {},
-        { headers: { Authorization: `Bearer ${clerkToken}` } }
-      );
-
-      const { accessToken, user: backendUser } = response.data;
-      setBackendToken(accessToken);
-      setUser(backendUser);
-
-      // Persist for API interceptor
-      localStorage.setItem('token', accessToken);
-      localStorage.setItem('user', JSON.stringify(backendUser));
-    } catch (err: any) {
-      console.error('[RouteX] Backend sync failed:', err?.response?.data || err.message);
-      // Fallback: use Clerk user data without backend sync
-      if (clerkUser) {
-        const fallbackUser: UserResponse = {
-          id: clerkUser.id,
-          name: clerkUser.fullName || clerkUser.firstName || 'User',
-          phone: clerkUser.phoneNumbers?.[0]?.phoneNumber || '',
-          role: 'shipper', // default role
-          isVerified: clerkUser.emailAddresses?.[0]?.verification?.status === 'verified',
-        };
-        setUser(fallbackUser);
-      }
-    }
-  }, [isSignedIn, clerkUser, getToken]);
-
-  // Sync with backend when Clerk auth state is known
-  useEffect(() => {
-    if (!clerkLoaded) return;
-
-    if (isSignedIn) {
-      setLoading(true);
-      syncWithBackend().finally(() => setLoading(false));
-    } else {
-      // Clerk says not signed in — clear local state
+      const res = await api.get<UserResponse>('/auth/me', {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      setUser(res.data);
+      setBackendToken(token);
+    } catch {
+      localStorage.removeItem('token');
+      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('user');
       setUser(null);
       setBackendToken(null);
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
+    } finally {
       setLoading(false);
     }
-  }, [clerkLoaded, isSignedIn, syncWithBackend]);
+  }, []);
 
-  /**
-   * @deprecated Kept for backward compatibility with existing code.
-   * New flows use Clerk's <SignIn /> component.
-   */
-  const login = async (phone: string) => {
+  useEffect(() => {
+    const storedToken = localStorage.getItem('token');
+    if (storedToken) {
+      loadMe(storedToken);
+    } else {
+      setLoading(false);
+    }
+  }, [loadMe]);
+
+  const sendPhoneOtp = async (phone: string) => {
+    try {
+      const res = await api.post<{
+        success: boolean;
+        message: string;
+        verificationId: string;
+        resendAvailableAt?: string;
+        devOtp?: string;
+      }>('/auth/phone/send-otp', {
+        phoneNumber: phone,
+        phone,
+      });
+
+      if (res.data?.devOtp) {
+        showToast(`OTP sent! Demo Code: ${res.data.devOtp}`, 'info');
+      } else {
+        showToast(res.data?.message || 'OTP sent successfully', 'success');
+      }
+      return res.data;
+    } catch (err: any) {
+      let msg = 'Failed to send OTP. Try again.';
+      if (!err.response) {
+        msg = 'Unable to connect to the authentication server.';
+      } else if (err.response.data?.message) {
+        msg = Array.isArray(err.response.data.message)
+          ? err.response.data.message[0]
+          : err.response.data.message;
+      }
+      showToast(msg, 'error');
+      throw err;
+    }
+  };
+
+  const verifyPhoneOtp = async (
+    phone: string,
+    otp: string,
+    verificationId?: string,
+    name?: string,
+    role?: string,
+    email?: string,
+  ) => {
     setLoading(true);
     try {
-      const response = await api.post<{ accessToken: string; user: UserResponse }>('/auth/login', { phone });
-      localStorage.setItem('token', response.data.accessToken);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      setBackendToken(response.data.accessToken);
-      setUser(response.data.user);
-      showToast('Logged in successfully!', 'success');
-      router.push(getDashboardRedirect(response.data.user.role));
+      const res = await api.post<{
+        accessToken: string;
+        refreshToken: string;
+        user: UserResponse;
+      }>('/auth/phone/verify-otp', {
+        phoneNumber: phone,
+        phone,
+        otp,
+        verificationId,
+        name,
+        role,
+        email,
+      });
+
+      const { accessToken, refreshToken, user: authUser } = res.data;
+      localStorage.setItem('token', accessToken);
+      localStorage.setItem('refreshToken', refreshToken);
+      localStorage.setItem('user', JSON.stringify(authUser));
+
+      setBackendToken(accessToken);
+      setUser(authUser);
+      showToast('Authentication successful!', 'success');
+
+      router.push(getDashboardRedirect(authUser.role));
     } catch (err: any) {
-      const message = err.response?.data?.message || 'Login failed. Please verify your phone number.';
-      showToast(message, 'error');
+      const msg = err.response?.data?.message || 'OTP verification failed. Check the code.';
+      showToast(msg, 'error');
       throw err;
     } finally {
       setLoading(false);
     }
   };
 
-  /**
-   * @deprecated Kept for backward compatibility.
-   */
+  const login = async (phone: string) => {
+    await sendPhoneOtp(phone);
+  };
+
   const register = async (name: string, phone: string, role: string, email?: string) => {
-    setLoading(true);
-    try {
-      const response = await api.post<{ accessToken: string; user: UserResponse }>(
-        '/auth/register', { name, phone, role, email }
-      );
-      localStorage.setItem('token', response.data.accessToken);
-      localStorage.setItem('user', JSON.stringify(response.data.user));
-      setBackendToken(response.data.accessToken);
-      setUser(response.data.user);
-      showToast('Registration successful!', 'success');
-      router.push(getDashboardRedirect(response.data.user.role));
-    } catch (err: any) {
-      const message = err.response?.data?.message || 'Registration failed. Try again.';
-      showToast(message, 'error');
-      throw err;
-    } finally {
-      setLoading(false);
-    }
+    await sendPhoneOtp(phone);
   };
 
   const logout = () => {
+    const refreshToken = localStorage.getItem('refreshToken');
+    if (refreshToken) {
+      api.post('/auth/logout', { refreshToken }).catch(() => {});
+    }
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setUser(null);
     setBackendToken(null);
@@ -181,20 +204,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, showToast, backendToken }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        authenticated: !!user,
+        loading,
+        role: user?.role || null,
+        sendPhoneOtp,
+        verifyPhoneOtp,
+        login,
+        register,
+        logout,
+        showToast,
+        backendToken,
+      }}
+    >
       {children}
 
-      {/* Toast Notification Renderer */}
+      {/* Toast Notifications */}
       <div className="fixed bottom-5 right-5 flex flex-col gap-2.5 z-50 pointer-events-none max-w-sm w-full">
         {toasts.map((t) => (
           <div
             key={t.id}
-            className={`pointer-events-auto flex items-center justify-between p-4 rounded-lg shadow-xl text-sm font-semibold transition-all duration-300 transform translate-y-0 animate-fade-in-up border ${
+            className={`pointer-events-auto flex items-center justify-between p-4 rounded-xl shadow-2xl text-xs font-bold transition-all border ${
               t.type === 'success'
-                ? 'bg-emerald-950/90 text-emerald-300 border-emerald-800'
+                ? 'bg-emerald-950/95 text-emerald-300 border-emerald-800'
                 : t.type === 'error'
-                ? 'bg-rose-950/90 text-rose-300 border-rose-800'
-                : 'bg-zinc-900/90 text-zinc-100 border-zinc-700'
+                ? 'bg-rose-950/95 text-rose-300 border-rose-800'
+                : 'bg-slate-900/95 text-slate-100 border-slate-700'
             }`}
           >
             <span>{t.message}</span>

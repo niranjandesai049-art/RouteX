@@ -2,6 +2,9 @@
 
 import React, { useState } from 'react';
 import { Truck, Shield, Clock, MapPin, ArrowRight, Zap, CheckCircle } from 'lucide-react';
+import { ContainerScroll } from './ui/container-scroll-animation';
+import RouteXDashboardPreview from './RouteXDashboardPreview';
+import Component from './ui/component';
 
 interface LandingPageProps {
   onNavigate: (portal: string) => void;
@@ -25,36 +28,45 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
   const handleEstimate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!pickup || !dest) return;
-    // Simple mock estimation based on random distance between 100km and 1000km
     const randomDistance = Math.floor(150 + Math.random() * 800);
-    const selected = truckCategories.find(t => t.name === truckType);
+    const selected = truckCategories.find((t) => t.name === truckType);
     const perKm = selected ? selected.rate : 25;
     setEstimatedPrice(randomDistance * perKm);
   };
 
   return (
     <div className="bg-white text-gray-900 min-h-screen font-sans">
-      {/* Header */}
+      {/* Header — ABSOLUTELY UNTOUCHED */}
       <header className="border-b border-gray-100 sticky top-0 bg-white/80 backdrop-blur z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-black text-xl">R</div>
-            <span className="text-2xl font-bold tracking-tight text-gray-900">Route<span className="text-blue-600">X</span></span>
+            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-black text-xl">
+              R
+            </div>
+            <span className="text-2xl font-bold tracking-tight text-gray-900">
+              Route<span className="text-blue-600">X</span>
+            </span>
           </div>
           <nav className="hidden md:flex space-x-8 text-sm font-semibold text-gray-600">
-            <a href="#features" className="hover:text-blue-600 transition">Features</a>
-            <a href="#fleet" className="hover:text-blue-600 transition">Truck Categories</a>
-            <a href="#estimator" className="hover:text-blue-600 transition">Rate Estimator</a>
+            <a href="#features" className="hover:text-blue-600 transition">
+              Features
+            </a>
+            <a href="#fleet" className="hover:text-blue-600 transition">
+              Truck Categories
+            </a>
+            <a href="#estimator" className="hover:text-blue-600 transition">
+              Rate Estimator
+            </a>
           </nav>
           <div className="flex space-x-4">
-            <button 
-              onClick={() => onNavigate('shipper')} 
+            <button
+              onClick={() => onNavigate('shipper')}
               className="text-sm font-semibold px-4 py-2 border border-gray-200 rounded-lg hover:border-gray-900 transition"
             >
               Sign In
             </button>
-            <button 
-              onClick={() => onNavigate('shipper')} 
+            <button
+              onClick={() => onNavigate('shipper')}
               className="text-sm font-semibold bg-blue-600 text-white px-5 py-2 rounded-lg hover:bg-blue-700 transition"
             >
               Book a Truck
@@ -62,6 +74,9 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
         </div>
       </header>
+
+      {/* GSAP + ScrollTrigger + Lenis RouteX Parallax Hero Section */}
+      <Component />
 
       {/* Hero Section */}
       <section className="py-20 md:py-32 max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
@@ -71,21 +86,22 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             <span>India's AI-Powered Digital Freight Marketplace</span>
           </div>
           <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-gray-900 mb-6 leading-tight">
-            Move Anything.<br />Anywhere. <span className="text-blue-600 font-extrabold">Smarter.</span>
+            Move Anything.<br />
+            Anywhere. <span className="text-blue-600 font-extrabold">Smarter.</span>
           </h1>
           <p className="text-lg text-gray-500 mb-8 max-w-lg">
             Connect instantly with thousands of verified carriers, optimize routes using AI, track shipments in real time, and settle payments instantly.
           </p>
           <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
-            <button 
-              onClick={() => onNavigate('shipper')} 
+            <button
+              onClick={() => onNavigate('shipper')}
               className="bg-blue-600 text-white px-8 py-4 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center space-x-2 shadow-lg shadow-blue-600/10"
             >
               <span>Access Shipper Portal</span>
               <ArrowRight size={18} />
             </button>
-            <button 
-              onClick={() => onNavigate('admin')} 
+            <button
+              onClick={() => onNavigate('admin')}
               className="bg-gray-50 text-gray-900 px-8 py-4 rounded-lg font-semibold border border-gray-200 hover:bg-gray-100 transition text-center"
             >
               Admin Dashboard
@@ -101,11 +117,11 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase">Pickup Location</label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  value={pickup} 
+                <input
+                  type="text"
+                  value={pickup}
                   onChange={(e) => setPickup(e.target.value)}
-                  placeholder="e.g. Okhla, New Delhi" 
+                  placeholder="e.g. Okhla, New Delhi"
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2.5 pl-10 pr-4 text-sm focus:border-blue-600 focus:bg-white outline-none"
                   required
                 />
@@ -116,11 +132,11 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
               <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase">Destination</label>
               <div className="relative">
                 <MapPin className="absolute left-3 top-3 text-gray-400" size={18} />
-                <input 
-                  type="text" 
-                  value={dest} 
+                <input
+                  type="text"
+                  value={dest}
                   onChange={(e) => setDest(e.target.value)}
-                  placeholder="e.g. Kalamboli, Navi Mumbai" 
+                  placeholder="e.g. Kalamboli, Navi Mumbai"
                   className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2.5 pl-10 pr-4 text-sm focus:border-blue-600 focus:bg-white outline-none"
                   required
                 />
@@ -129,19 +145,21 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
 
             <div>
               <label className="block text-xs font-semibold text-gray-500 mb-2 uppercase">Truck Type</label>
-              <select 
-                value={truckType} 
+              <select
+                value={truckType}
                 onChange={(e) => setTruckType(e.target.value)}
                 className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2.5 px-4 text-sm focus:border-blue-600 focus:bg-white outline-none"
               >
-                {truckCategories.map(t => (
-                  <option key={t.name} value={t.name}>{t.name} ({t.capacity})</option>
+                {truckCategories.map((t) => (
+                  <option key={t.name} value={t.name}>
+                    {t.name} ({t.capacity})
+                  </option>
                 ))}
               </select>
             </div>
 
-            <button 
-              type="submit" 
+            <button
+              type="submit"
               className="w-full bg-gray-900 text-white py-3 rounded-lg font-semibold hover:bg-gray-800 transition"
             >
               Calculate AI Estimate Price
@@ -154,7 +172,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 <span className="text-xs text-gray-500 font-semibold uppercase">Estimated Freight Cost</span>
                 <p className="text-3xl font-black text-blue-600">₹{estimatedPrice.toLocaleString()}</p>
               </div>
-              <button 
+              <button
                 onClick={() => onNavigate('shipper')}
                 className="bg-blue-600 text-white text-xs font-semibold px-4 py-2.5 rounded-lg hover:bg-blue-700 transition"
               >
@@ -163,6 +181,31 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
             </div>
           )}
         </div>
+      </section>
+
+      {/* 3D Scroll-Based RouteX Product Showcase Section */}
+      <section className="bg-slate-950 overflow-hidden border-t border-slate-900">
+        <ContainerScroll
+          titleComponent={
+            <div className="space-y-3 md:space-y-4">
+              <div className="inline-flex items-center space-x-2 bg-blue-500/10 text-blue-400 border border-blue-500/20 px-3.5 py-1.5 rounded-full text-xs md:text-sm font-semibold">
+                <Zap size={15} className="text-amber-400" />
+                <span>Next-Generation Digital Freight Control Engine</span>
+              </div>
+              <h2 className="text-3xl sm:text-4xl md:text-6xl font-extrabold tracking-tight text-white leading-tight">
+                Unleash the Power of <br className="hidden sm:inline" />
+                <span className="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 via-indigo-300 to-emerald-400">
+                  Real-Time AI Logistics
+                </span>
+              </h2>
+              <p className="text-slate-400 text-xs sm:text-sm md:text-base max-w-2xl mx-auto px-4">
+                Experience India's most advanced freight control center. Manage live shipments, optimize carrier routes, and settle payments in real time.
+              </p>
+            </div>
+          }
+        >
+          <RouteXDashboardPreview />
+        </ContainerScroll>
       </section>
 
       {/* Trust Pillars */}
@@ -210,8 +253,12 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
           </div>
           <p className="text-xs text-gray-500">© {new Date().getFullYear()} RouteX Technologies Private Limited. All rights reserved.</p>
           <div className="flex space-x-6 text-sm font-medium">
-            <a href="#" className="hover:text-white transition">Privacy Policy</a>
-            <a href="#" className="hover:text-white transition">Terms of Service</a>
+            <a href="#" className="hover:text-white transition">
+              Privacy Policy
+            </a>
+            <a href="#" className="hover:text-white transition">
+              Terms of Service
+            </a>
           </div>
         </div>
       </footer>
