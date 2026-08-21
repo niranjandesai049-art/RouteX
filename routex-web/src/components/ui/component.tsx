@@ -63,10 +63,59 @@ export const Component = () => {
       }
     });
 
+    // 🌟 Entrance animations on initial page load (wows the user!)
+    const entryTl = gsap.timeline({
+      defaults: { ease: 'power3.out' }
+    });
+
+    // 1. Background image zoom out + fade in
+    const bgEl = triggerElement.querySelector('[data-parallax-layer="1"]');
+    if (bgEl) {
+      entryTl.fromTo(bgEl,
+        { scale: 1.12, opacity: 0 },
+        { scale: 1, opacity: 0.85, duration: 1.8 },
+        0
+      );
+    }
+
+    // 2. Title fade & slide down
+    const titleEl = triggerElement.querySelector('.parallax__title');
+    if (titleEl) {
+      entryTl.fromTo(titleEl,
+        { y: -60, opacity: 0 },
+        { y: 0, opacity: 1, duration: 1.4 },
+        0.3
+      );
+    }
+
+    // 3. Subtitle fade & slide up
+    const subtitleEl = triggerElement.querySelector('.parallax__layer-title p');
+    if (subtitleEl) {
+      entryTl.fromTo(subtitleEl,
+        { y: 30, opacity: 0 },
+        { y: 0, opacity: 1, duration: 1.2 },
+        0.5
+      );
+    }
+
+    // 4. Truck & Shadow slide up with back bounce
+    const truckWrapper = triggerElement.querySelector('[data-parallax-layer="4"] > div');
+    if (truckWrapper) {
+      entryTl.fromTo(truckWrapper,
+        { y: 150, scale: 0.9, opacity: 0 },
+        { y: 0, scale: 1, opacity: 1, ease: 'back.out(1.1)', duration: 1.6 },
+        0.4
+      );
+    }
+
     return () => {
       gsap.ticker.remove(updateTicker);
       ScrollTrigger.getAll().forEach((st) => st.kill());
       gsap.killTweensOf(triggerElement);
+      if (bgEl) gsap.killTweensOf(bgEl);
+      if (titleEl) gsap.killTweensOf(titleEl);
+      if (subtitleEl) gsap.killTweensOf(subtitleEl);
+      if (truckWrapper) gsap.killTweensOf(truckWrapper);
       lenis.destroy();
     };
   }, []);
@@ -122,7 +171,7 @@ export const Component = () => {
         {/* Layer 4: Uploaded Semi-Truck (Foreground Visual) */}
         <div
           data-parallax-layer="4"
-          className="absolute inset-x-0 bottom-4 md:bottom-8 z-30 flex justify-center items-end pointer-events-none px-4"
+          className="absolute inset-x-0 bottom-16 md:bottom-24 z-30 flex justify-center items-end pointer-events-none px-4"
           style={{ willChange: 'transform' }}
         >
           <div className="relative w-[85%] sm:w-[65%] md:w-[50%] lg:w-[45%] max-w-[850px] flex justify-center">

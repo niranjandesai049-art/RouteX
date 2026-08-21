@@ -83,19 +83,22 @@ export class AuthService {
     const cleanPhone = result.phoneNumber;
 
     let profile: any = null;
-    try {
-      profile = await this.prisma.profiles.findFirst({
-        where: { phone_number: cleanPhone },
-        include: {
-          drivers: {
-            include: {
-              trucks: true,
+
+    if (this.prisma.isConnected) {
+      try {
+        profile = await this.prisma.profiles.findFirst({
+          where: { phone_number: cleanPhone },
+          include: {
+            drivers: {
+              include: {
+                trucks: true,
+              },
             },
           },
-        },
-      });
-    } catch (err: any) {
-      this.logger.warn(`[AUTH] DB query profile warning: ${err.message}`);
+        });
+      } catch (err: any) {
+        this.logger.warn(`[AUTH] DB query profile warning: ${err.message}`);
+      }
     }
 
     if (!profile) {
@@ -106,94 +109,70 @@ export class AuthService {
       const assignedRole = this.mapRole(preferredRole);
       const userId = 'usr_' + randomUUID().substring(0, 18);
 
-      try {
-        let existingUser = await this.prisma.users.findFirst({
-          where: { OR: [{ phone: cleanPhone }, { email: assignedEmail }] },
-        });
-
-        if (existingUser) {
-          profile = await this.prisma.profiles.findFirst({ where: { id: existingUser.id } });
-        } else {
-          await this.prisma.users.create({
-            data: {
-              id: userId,
-              email: assignedEmail,
-              phone: cleanPhone,
-              aud: 'authenticated',
-              role: 'authenticated',
-            },
-          });
-        }
-      } catch {}
-
-      if (!profile) {
+      if (this.prisma.isConnected) {
         try {
-          profile = await this.prisma.profiles.upsert({
-            where: { id: userId },
-            create: {
-              id: userId,
-              first_name: firstName,
-              last_name: lastName,
-              email: assignedEmail,
-              phone_number: cleanPhone,
-              role: assignedRole,
-              verification_state: verification_status.pending,
-              is_active: true,
-            },
-            update: {
-              phone_number: cleanPhone,
-            },
-            include: {
-              drivers: {
-                include: {
-                  trucks: true,
+          let existingUser = await this.prisma.users.findFirst({
+            where: { OR: [{ phone: cleanPhone }, { email: assignedEmail }] },
+          });
+
+          if (existingUser) {
+            profile = await this.prisma.profiles.findFirst({ where: { id: existingUser.id } });
+          } else {
+            await this.prisma.users.create({
+              data: {
+                id: userId,
+                email: assignedEmail,
+                phone: cleanPhone,
+                aud: 'authenticated',
+                role: 'authenticated',
+              },
+            });
+          }
+        } catch {}
+
+        if (!profile) {
+          try {
+            profile = await this.prisma.profiles.upsert({
+              where: { id: userId },
+              create: {
+                id: userId,
+                first_name: firstName,
+                last_name: lastName,
+                email: assignedEmail,
+                phone_number: cleanPhone,
+                role: assignedRole,
+                verification_state: verification_status.pending,
+                is_active: true,
+              },
+              update: {
+                phone_number: cleanPhone,
+              },
+              include: {
+                drivers: {
+                  include: {
+                    trucks: true,
+                  },
                 },
               },
-            },
-          });
-        } catch (err: any) {
-          this.logger.warn(`[AUTH] Profile upsert warning: ${err.message}. Using in-memory user profile.`);
-          profile = {
-            id: userId,
-            first_name: firstName,
-            last_name: lastName,
-            email: assignedEmail,
-            phone_number: cleanPhone,
-            role: assignedRole,
-            verification_state: verification_status.verified,
-            is_active: true,
-            drivers: null,
-          };
+            });
+          } catch (err: any) {
+            this.logger.warn(`[AUTH] Profile upsert warning: ${err.message}. Using in-memory user profile.`);
+          }
         }
       }
 
-      try {
-        const existingWallet = await this.prisma.wallets.findFirst({ where: { profile_id: profile.id } });
-        if (!existingWallet) {
-          await this.prisma.wallets.create({
-            data: {
-              profile_id: profile.id,
-              balance: 0.0,
-              currency: 'INR',
-              is_frozen: false,
-            },
-          });
-        }
-      } catch {}
-
-      if (assignedRole === user_role.driver && !profile.drivers) {
-        try {
-          await this.prisma.drivers.create({
-            data: {
-              id: profile.id,
-              license_number: `DL-${Math.floor(100000 + Math.random() * 900000)}`,
-              license_expiry: new Date(Date.now() + 5 * 365 * 24 * 60 * 60 * 1000),
-              years_of_experience: 1,
-              status: driver_status.available,
-              verification_state: verification_status.pending,
-            },
-          });
-        } catch {}
+      if (!profile) {
+        profile = {
+          id: userId,
+          first_name: firstName,
+          last_name: lastName,
+          email: assignedEmail,
+          phone_number: cleanPhone,
+          role: assignedRole,
+          verification_state: verification_status.verified,
+          is_active: true,
+          drivers: null,
+        };
       }
     }
 
@@ -208,17 +187,19 @@ export class AuthService {
     const refreshTokenHash = this.hashToken(refreshTokenRaw);
     const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
 
-    try {
-      await this.prisma.auth_sessions.create({
-        data: {
-          user_id: profile.id,
-          refresh_token_hash: refreshTokenHash,
-          device_id: deviceId || 'default-device',
-          expires_at: sessionExpiresAt,
-        },
-      });
-    } catch (err: any) {
-      this.logger.warn(`[AUTH] Auth session creation warning: ${err.message}`);
+    if (this.prisma.isConnected) {
+      try {
+        await this.prisma.auth_sessions.create({
+          data: {
+            user_id: profile.id,
+            refresh_token_hash: refreshTokenHash,
+            device_id: deviceId || 'default-device',
+            expires_at: sessionExpiresAt,
+          },
+        });
+      } catch (err: any) {
+        this.logger.warn(`[AUTH] Auth session creation warning: ${err.message}`);
+      }
     }
 
     const driver = profile.drivers;
@@ -248,6 +229,158 @@ export class AuthService {
         phone_verified: true,
         email_verified: profile.is_active ?? true,
         isVerified: profile.verification_state === verification_status.verified,
+      },
+    };
+  }
+
+  /**
+   * Google OAuth step: Authenticate or register user via Google credentials.
+   */
+  async googleAuth(
+    email: string,
+    name?: string,
+    googleId?: string,
+    preferredRole?: string,
+    phone?: string,
+    photoUrl?: string,
+  ) {
+    const cleanEmail = email.toLowerCase().trim();
+    let profile: any = null;
+
+    if (this.prisma.isConnected) {
+      try {
+        profile = await this.prisma.profiles.findFirst({
+          where: { email: cleanEmail },
+          include: { drivers: { include: { trucks: true } } },
+        });
+      } catch (err: any) {
+        this.logger.warn(`[AUTH] DB query profile warning in googleAuth: ${err.message}`);
+      }
+    }
+
+    const assignedRole = this.mapRole(preferredRole);
+    const names = (name || cleanEmail.split('@')[0] || 'Google User').split(' ');
+    const firstName = names[0] || 'Google';
+    const lastName = names.slice(1).join(' ') || 'User';
+    const fallbackPhone = phone || `+9199${Math.floor(10000000 + Math.random() * 90000000)}`;
+
+    if (!profile) {
+      const userId = 'usr_' + randomUUID().substring(0, 18);
+
+      if (this.prisma.isConnected) {
+        try {
+          let existingUser = await this.prisma.users.findFirst({
+            where: { email: cleanEmail },
+          });
+
+          if (existingUser) {
+            profile = await this.prisma.profiles.findFirst({ where: { id: existingUser.id } });
+          } else {
+            await this.prisma.users.create({
+              data: {
+                id: userId,
+                email: cleanEmail,
+                phone: fallbackPhone,
+                aud: 'authenticated',
+                role: 'authenticated',
+              },
+            });
+          }
+        } catch {}
+
+        if (!profile) {
+          try {
+            profile = await this.prisma.profiles.upsert({
+              where: { id: userId },
+              create: {
+                id: userId,
+                first_name: firstName,
+                last_name: lastName,
+                email: cleanEmail,
+                phone_number: fallbackPhone,
+                role: assignedRole,
+                verification_state: verification_status.verified,
+                is_active: true,
+                avatar_url: photoUrl || null,
+              },
+              update: {
+                email: cleanEmail,
+              },
+              include: { drivers: { include: { trucks: true } } },
+            });
+          } catch (err: any) {
+            this.logger.warn(`[AUTH] Profile upsert warning in googleAuth: ${err.message}. Using in-memory user.`);
+          }
+        }
+      }
+
+      if (!profile) {
+        profile = {
+          id: userId,
+          first_name: firstName,
+          last_name: lastName,
+          email: cleanEmail,
+          phone_number: fallbackPhone,
+          role: assignedRole,
+          verification_state: verification_status.verified,
+          is_active: true,
+          drivers: null,
+        };
+      }
+    }
+
+    const payload = {
+      sub: profile.id,
+      email: profile.email,
+      role: profile.role,
+    };
+    const accessToken = this.jwtService.sign(payload);
+    const refreshTokenRaw = 'rt_' + randomUUID();
+    const refreshTokenHash = this.hashToken(refreshTokenRaw);
+    const sessionExpiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    if (this.prisma.isConnected) {
+      try {
+        await this.prisma.auth_sessions.create({
+          data: {
+            user_id: profile.id,
+            refresh_token_hash: refreshTokenHash,
+            device_id: 'google-oauth',
+            expires_at: sessionExpiresAt,
+          },
+        });
+      } catch (err: any) {
+        this.logger.warn(`[AUTH] Auth session creation warning: ${err.message}`);
+      }
+    }
+
+    const driver = profile.drivers;
+
+    return {
+      token: accessToken,
+      accessToken,
+      refreshToken: refreshTokenRaw,
+      profile: {
+        id: profile.id,
+        first_name: profile.first_name || firstName,
+        last_name: profile.last_name || lastName,
+        email: profile.email || cleanEmail,
+        phone: profile.phone_number || fallbackPhone,
+        role: profile.role || assignedRole,
+        license_number: driver?.license_number || 'DL-VERIFIED',
+        experience_years: driver?.years_of_experience || 0,
+        status: driver?.status || 'available',
+        vehicle: driver?.trucks || null,
+      },
+      user: {
+        id: profile.id,
+        name: `${profile.first_name || firstName} ${profile.last_name || lastName}`.trim(),
+        phone: profile.phone_number || fallbackPhone,
+        email: profile.email || cleanEmail,
+        role: profile.role || assignedRole,
+        phone_verified: true,
+        email_verified: true,
+        isVerified: true,
       },
     };
   }

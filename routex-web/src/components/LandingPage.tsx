@@ -1,16 +1,23 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Truck, Shield, Clock, MapPin, ArrowRight, Zap, CheckCircle } from 'lucide-react';
 import { ContainerScroll } from './ui/container-scroll-animation';
 import RouteXDashboardPreview from './RouteXDashboardPreview';
 import Component from './ui/component';
+import gsap from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+if (typeof window !== 'undefined') {
+  gsap.registerPlugin(ScrollTrigger);
+}
 
 interface LandingPageProps {
   onNavigate: (portal: string) => void;
 }
 
 export default function LandingPage({ onNavigate }: LandingPageProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const [pickup, setPickup] = useState('');
   const [dest, setDest] = useState('');
   const [truckType, setTruckType] = useState('Tata Ace');
@@ -34,8 +41,89 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
     setEstimatedPrice(randomDistance * perKm);
   };
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    let heroTextCtx: gsap.Context | null = null;
+    let heroFormCtx: gsap.Context | null = null;
+    let trustCardsCtx: gsap.Context | null = null;
+
+    const heroTextElements = el.querySelectorAll('.hero-text-animate');
+    if (heroTextElements.length > 0) {
+      heroTextCtx = gsap.context(() => {
+        gsap.fromTo(
+          heroTextElements,
+          { opacity: 0, x: -40 },
+          {
+            opacity: 1,
+            x: 0,
+            duration: 1,
+            stagger: 0.15,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: '.hero-section-trigger',
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }, el);
+    }
+
+    const heroForm = el.querySelector('.hero-form-animate');
+    if (heroForm) {
+      heroFormCtx = gsap.context(() => {
+        gsap.fromTo(
+          heroForm,
+          { opacity: 0, x: 40, scale: 0.96 },
+          {
+            opacity: 1,
+            x: 0,
+            scale: 1,
+            duration: 1.2,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: '.hero-section-trigger',
+              start: 'top 85%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }, el);
+    }
+
+    const trustCards = el.querySelectorAll('.trust-card-animate');
+    if (trustCards.length > 0) {
+      trustCardsCtx = gsap.context(() => {
+        gsap.fromTo(
+          trustCards,
+          { opacity: 0, y: 40 },
+          {
+            opacity: 1,
+            y: 0,
+            duration: 0.8,
+            stagger: 0.18,
+            ease: 'power3.out',
+            scrollTrigger: {
+              trigger: '#features',
+              start: 'top 80%',
+              toggleActions: 'play none none none',
+            },
+          }
+        );
+      }, el);
+    }
+
+    return () => {
+      if (heroTextCtx) heroTextCtx.revert();
+      if (heroFormCtx) heroFormCtx.revert();
+      if (trustCardsCtx) trustCardsCtx.revert();
+    };
+  }, []);
+
   return (
-    <div className="bg-white text-gray-900 min-h-screen font-sans">
+    <div ref={containerRef} className="bg-white text-gray-900 min-h-screen font-sans">
       {/* Header — ABSOLUTELY UNTOUCHED */}
       <header className="border-b border-gray-100 sticky top-0 bg-white/80 backdrop-blur z-50">
         <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -79,20 +167,20 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
       <Component />
 
       {/* Hero Section */}
-      <section className="py-20 md:py-32 max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+      <section className="hero-section-trigger py-20 md:py-32 max-w-7xl mx-auto px-6 grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
         <div>
-          <div className="inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-semibold mb-6">
+          <div className="hero-text-animate inline-flex items-center space-x-2 bg-blue-50 text-blue-700 px-3 py-1.5 rounded-full text-xs font-semibold mb-6">
             <Zap size={14} />
             <span>India's AI-Powered Digital Freight Marketplace</span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-bold tracking-tight text-gray-900 mb-6 leading-tight">
+          <h1 className="hero-text-animate text-5xl md:text-7xl font-bold tracking-tight text-gray-900 mb-6 leading-tight">
             Move Anything.<br />
             Anywhere. <span className="text-blue-600 font-extrabold">Smarter.</span>
           </h1>
-          <p className="text-lg text-gray-500 mb-8 max-w-lg">
+          <p className="hero-text-animate text-lg text-gray-500 mb-8 max-w-lg">
             Connect instantly with thousands of verified carriers, optimize routes using AI, track shipments in real time, and settle payments instantly.
           </p>
-          <div className="flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
+          <div className="hero-text-animate flex flex-col sm:flex-row space-y-4 sm:space-y-0 sm:space-x-4">
             <button
               onClick={() => onNavigate('shipper')}
               className="bg-blue-600 text-white px-8 py-4 rounded-lg font-semibold hover:bg-blue-700 transition flex items-center justify-center space-x-2 shadow-lg shadow-blue-600/10"
@@ -110,7 +198,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         </div>
 
         {/* Instant Freight Estimate Form */}
-        <div id="estimator" className="bg-white border border-gray-100 rounded-2xl p-8 shadow-xl shadow-gray-200/50">
+        <div id="estimator" className="hero-form-animate bg-white border border-gray-100 rounded-2xl p-8 shadow-xl shadow-gray-200/50">
           <h3 className="text-xl font-bold mb-6 text-gray-900">Get Instant Rate Estimate</h3>
           <form onSubmit={handleEstimate} className="space-y-4">
             <div>
@@ -213,7 +301,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-16">Designed for Modern Logistics</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
+            <div className="trust-card-animate bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
               <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-6">
                 <Shield size={24} />
               </div>
@@ -222,7 +310,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 All drivers and fleet owners undergo strict Aadhaar, DL, and GST verification before onboarding to ensure premium safety.
               </p>
             </div>
-            <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
+            <div className="trust-card-animate bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
               <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-6">
                 <Clock size={24} />
               </div>
@@ -231,7 +319,7 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
                 Get real-time freight pricing matching market rates and optimal driver assignments using state-of-the-art AI.
               </p>
             </div>
-            <div className="bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
+            <div className="trust-card-animate bg-white p-8 rounded-xl border border-gray-100 shadow-sm">
               <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center mb-6">
                 <CheckCircle size={24} />
               </div>

@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { Phone, ArrowRight, ShieldCheck, RefreshCw, Lock, Mail, User, UserCheck } from 'lucide-react';
 import Link from 'next/link';
+import { useAuth } from '../../context/AuthContext';
 
 export interface ModernLoginSignupProps {
   initialMode?: 'login' | 'signup';
@@ -50,6 +51,7 @@ export function ModernLoginSignup({
   onResetStep,
 }: ModernLoginSignupProps) {
   const [isSignUp, setIsSignUp] = useState(initialMode === 'signup');
+  const { loginWithGoogle } = useAuth();
 
   const handleToggle = (targetSignUp: boolean) => {
     setIsSignUp(targetSignUp);
@@ -375,7 +377,7 @@ export function ModernLoginSignup({
               <div className="flex items-center justify-center space-x-3">
                 <button
                   type="button"
-                  onClick={() => alert('Google Sign-In ready via OAuth.')}
+                  onClick={() => loginWithGoogle(role)}
                   className="w-10 h-10 rounded-full border border-slate-200 flex items-center justify-center text-slate-700 font-bold text-sm hover:border-blue-600 hover:text-blue-600 hover:bg-blue-50/50 transition-all cursor-pointer shadow-sm"
                   title="Sign in with Google"
                 >
