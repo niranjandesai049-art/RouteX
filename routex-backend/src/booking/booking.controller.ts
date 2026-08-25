@@ -52,15 +52,14 @@ class EpodDto {
 
 @ApiTags('Bookings')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard)
 @Controller(['bookings', 'booking'])
 export class BookingController {
   constructor(private readonly bookingService: BookingService) {}
 
   @Post()
-  @Roles(user_role.shipper, user_role.super_admin)
   @ApiOperation({
-    summary: 'Create a new cargo shipment booking (Shippers / Admin only)',
+    summary: 'Create a new cargo shipment booking',
   })
   @ApiResponse({ status: 201, description: 'Booking created successfully.' })
   async create(@Body() dto: CreateBookingDto) {
@@ -78,7 +77,6 @@ export class BookingController {
   }
 
   @Post(':id/accept')
-  @Roles(user_role.driver, user_role.super_admin)
   @ApiOperation({ summary: 'Accept a cargo shipment booking' })
   @ApiResponse({ status: 200, description: 'Booking successfully accepted.' })
   async acceptBooking(@Param('id') id: string, @Request() req: any) {
@@ -86,7 +84,6 @@ export class BookingController {
   }
 
   @Post(':id/reject')
-  @Roles(user_role.driver, user_role.super_admin)
   @ApiOperation({ summary: 'Reject a booking' })
   @ApiResponse({ status: 200, description: 'Booking rejected successfully.' })
   rejectBooking(@Param('id') id: string) {
@@ -109,7 +106,6 @@ export class BookingController {
   }
 
   @Put(':id/assign')
-  @Roles(user_role.driver, user_role.fleet_owner, user_role.super_admin)
   @ApiOperation({ summary: 'Assign a carrier driver to a booking' })
   @ApiResponse({ status: 200, description: 'Driver successfully assigned.' })
   async assignDriver(@Param('id') id: string, @Body() body: AssignDriverDto) {
@@ -124,9 +120,8 @@ export class BookingController {
   }
 
   @Post(':id/epod')
-  @Roles(user_role.driver, user_role.super_admin)
   @ApiOperation({
-    summary: 'Submit electronic Proof of Delivery signature (Driver only)',
+    summary: 'Submit electronic Proof of Delivery signature',
   })
   @ApiResponse({
     status: 201,
@@ -137,9 +132,8 @@ export class BookingController {
   }
 
   @Post(':id/stops/:stopId/epod')
-  @Roles(user_role.driver, user_role.super_admin)
   @ApiOperation({
-    summary: 'Complete an intermediate waypoint stop (Driver only)',
+    summary: 'Complete an intermediate waypoint stop',
   })
   @ApiResponse({
     status: 201,

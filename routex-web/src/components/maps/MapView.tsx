@@ -90,7 +90,7 @@ export default function MapView({
   const [routePath, setRoutePath] = useState<[number, number][]>([]);
   const [mapBounds, setMapBounds] = useState<L.LatLngBoundsExpression | null>(null);
 
-  // Fetch OSRM driving route polyline
+  // Fetch OSRM driving route polyline with network fallback
   useEffect(() => {
     if (!pickupCoords || !dropCoords) {
       setRoutePath([]);
@@ -98,6 +98,7 @@ export default function MapView({
       return;
     }
 
+    let isMounted = true;
     const fetchRoute = async () => {
       try {
         const [lat1, lng1] = pickupCoords;
@@ -111,10 +112,17 @@ export default function MapView({
         }
         url += `${lng2},${lat2}?overview=full&geometries=geojson`;
 
-        const res = await fetch(url);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.routes && data.routes[0]) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
+
+        const res = await fetch(url, { signal: controller.signal }).catch(() => null);
+        clearTimeout(timeoutId);
+
+        if (!isMounted) return;
+
+        if (res && res.ok) {
+          const data = await res.json().catch(() => null);
+          if (data && data.routes && data.routes[0]) {
             const coords = data.routes[0].geometry.coordinates;
             // OSRM returns [lng, lat], map it to Leaflet [lat, lng]
             const path: [number, number][] = coords.map((c: number[]) => [c[1], c[0]]);
@@ -126,14 +134,32 @@ export default function MapView({
               [bounds.getSouthWest().lat, bounds.getSouthWest().lng],
               [bounds.getNorthEast().lat, bounds.getNorthEast().lng],
             ]);
+            return;
           }
         }
+
+        // Safe Fallback: Direct polyline connecting pickup, waypoints, and drop points
+        const fallbackPath: [number, number][] = [pickupCoords, ...(waypoints || []), dropCoords];
+        setRoutePath(fallbackPath);
+        const bounds = L.latLngBounds(fallbackPath);
+        setMapBounds([
+          [bounds.getSouthWest().lat, bounds.getSouthWest().lng],
+          [bounds.getNorthEast().lat, bounds.getNorthEast().lng],
+        ]);
       } catch (err) {
-        console.error('OSRM Routing error:', err);
+        if (!isMounted) return;
+        if (pickupCoords && dropCoords) {
+          const fallbackPath: [number, number][] = [pickupCoords, ...(waypoints || []), dropCoords];
+          setRoutePath(fallbackPath);
+        }
       }
     };
 
     fetchRoute();
+
+    return () => {
+      isMounted = false;
+    };
   }, [pickupCoords, dropCoords, waypoints]);
 
   // Recenter on active marker if autoCenter is toggled

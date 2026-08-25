@@ -51,6 +51,11 @@ export const bookingsService = {
     return response.data;
   },
 
+  async acceptBooking(id: string): Promise<BookingResponse> {
+    const response = await api.post<BookingResponse>(`/bookings/${id}/accept`);
+    return response.data;
+  },
+
   async updateStatus(id: string, status: string): Promise<BookingResponse> {
     const response = await api.put<BookingResponse>(`/bookings/${id}/status`, { status });
     return response.data;

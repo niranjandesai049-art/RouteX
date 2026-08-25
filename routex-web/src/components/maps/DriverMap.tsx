@@ -32,15 +32,15 @@ const geocodeAddressAsync = async (address: string): Promise<[number, number]> =
   try {
     const res = await fetch(
       `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`
-    );
-    if (res.ok) {
-      const data = await res.json();
+    ).catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
       if (data && data[0]) {
         return [parseFloat(data[0].lat), parseFloat(data[0].lon)];
       }
     }
   } catch (err: any) {
-    console.warn('Geocoding fetch failed, using fallback:', err.message);
+    // Safe fallback without throwing unhandled rejection
   }
   
   return [28.6139, 77.2090];

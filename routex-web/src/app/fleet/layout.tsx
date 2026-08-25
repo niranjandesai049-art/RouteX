@@ -1,7 +1,8 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ProtectedLayout } from '../../components/ProtectedLayout';
+import { UserProfileModal } from '../../components/UserProfileModal';
 import { useAuth } from '../../context/AuthContext';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
@@ -22,6 +23,7 @@ export default function FleetLayout({ children }: { children: React.ReactNode })
   const { user, logout } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
+  const [isProfileOpen, setIsProfileOpen] = useState(false);
 
   const navigation = [
     { name: 'Dashboard', href: '/fleet', icon: LayoutDashboard },
@@ -40,12 +42,19 @@ export default function FleetLayout({ children }: { children: React.ReactNode })
         <aside className="w-64 border-r border-[#EBEBEB] bg-white flex flex-col justify-between p-6">
           <div className="space-y-8">
             {/* Logo */}
-            <div className="flex items-center space-x-3">
+            <Link
+              href="/"
+              onClick={(e) => {
+                e.preventDefault();
+                router.push('/');
+              }}
+              className="flex items-center space-x-3 hover:opacity-90 transition cursor-pointer select-none"
+            >
               <div className="w-8 h-8 bg-[#2563EB] rounded-lg flex items-center justify-center font-bold text-white text-md">
                 R
               </div>
               <span className="font-bold text-lg tracking-tight">RouteX</span>
-            </div>
+            </Link>
 
             {/* Nav Links */}
             <nav className="space-y-1">
@@ -70,20 +79,23 @@ export default function FleetLayout({ children }: { children: React.ReactNode })
           </div>
 
           {/* User Section & Logout */}
-          <div className="border-t border-[#EBEBEB] pt-4 space-y-3">
-            <div className="flex items-center space-x-3 px-2">
-              <div className="w-9 h-9 bg-gray-100 rounded-full flex items-center justify-center font-bold text-[#666666] text-xs">
+          <div className="border-t border-[#EBEBEB] pt-4 space-y-2">
+            <button
+              onClick={() => setIsProfileOpen(true)}
+              className="w-full flex items-center space-x-3 px-2 py-2 rounded-xl hover:bg-slate-50 transition text-left cursor-pointer"
+            >
+              <div className="w-9 h-9 bg-blue-100 rounded-full flex items-center justify-center font-bold text-[#2563EB] text-xs shrink-0">
                 {user?.name ? user.name[0].toUpperCase() : 'F'}
               </div>
               <div className="truncate">
                 <p className="text-xs font-bold text-[#1A1A1A] truncate">{user?.name || 'Fleet Manager'}</p>
-                <span className="text-[10px] text-[#888888]">Carrier Account</span>
+                <span className="text-[10px] text-[#888888]">Carrier Profile & Settings</span>
               </div>
-            </div>
+            </button>
 
             <button
               onClick={logout}
-              className="w-full flex items-center space-x-3 px-4 py-3 text-sm font-semibold text-[#FF4D4D] hover:bg-[#FFF5F5] rounded-xl transition cursor-pointer"
+              className="w-full flex items-center space-x-3 px-4 py-2.5 text-sm font-semibold text-[#FF4D4D] hover:bg-[#FFF5F5] rounded-xl transition cursor-pointer"
             >
               <LogOut size={18} />
               <span>Sign Out</span>
@@ -102,32 +114,35 @@ export default function FleetLayout({ children }: { children: React.ReactNode })
             </div>
 
             <div className="flex items-center space-x-4">
-              {/* Notification icon */}
-              <button className="p-2 text-[#666666] hover:text-[#1A1A1A] transition rounded-lg hover:bg-[#FAFAFA]">
+              <button className="p-2 text-[#888888] hover:text-[#1A1A1A] rounded-full hover:bg-gray-100 transition relative">
                 <Bell size={18} />
+                <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-[#2563EB] rounded-full"></span>
               </button>
 
-              <div className="h-6 w-[1px] bg-[#EBEBEB]"></div>
-
-              <div className="flex items-center space-x-2">
-                <span className="text-xs font-semibold text-[#666666]">
-                  {user?.phone || 'Carrier'}
-                </span>
-                <span className="px-2 py-0.5 text-[9px] font-bold bg-[#E6F4EA] text-[#137333] uppercase rounded-full">
-                  Verified
-                </span>
-              </div>
+              <button
+                onClick={() => setIsProfileOpen(true)}
+                className="flex items-center space-x-3 border-l border-[#EBEBEB] pl-4 hover:opacity-80 transition cursor-pointer"
+              >
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-[#2563EB] flex items-center justify-center font-bold text-xs">
+                  {user?.name ? user.name[0].toUpperCase() : 'F'}
+                </div>
+                <div className="hidden sm:block text-left">
+                  <p className="text-xs font-bold text-[#1A1A1A]">{user?.name || 'Carrier'}</p>
+                  <p className="text-[10px] text-[#888888]">Active Operator</p>
+                </div>
+              </button>
             </div>
           </header>
 
-          {/* Page Body */}
-          <main className="flex-1 p-8 overflow-y-auto">
-            <div className="max-w-7xl mx-auto space-y-8">
-              {children}
-            </div>
+          {/* Page Dynamic Content */}
+          <main className="flex-1 p-8">
+            {children}
           </main>
         </div>
       </div>
+
+      {/* Real Authenticated User Profile Modal */}
+      <UserProfileModal isOpen={isProfileOpen} onClose={() => setIsProfileOpen(false)} />
     </ProtectedLayout>
   );
 }

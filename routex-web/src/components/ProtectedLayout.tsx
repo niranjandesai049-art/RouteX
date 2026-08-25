@@ -17,23 +17,28 @@ export const ProtectedLayout: React.FC<ProtectedLayoutProps> = ({ children, allo
     if (!loading) {
       if (!user) {
         router.push('/login');
-      } else if (allowedRoles && !allowedRoles.includes(user.role)) {
-        // Redirect to their default dashboard if unauthorized
-        switch (user.role) {
+      } else if (allowedRoles && (!user.role || !allowedRoles.map((r) => r.toLowerCase()).includes(user.role.toLowerCase()))) {
+        // Redirect to their real role dashboard if unauthorized for this route
+        const userRole = (user.role || '').toLowerCase();
+        switch (userRole) {
           case 'driver':
             router.push('/driver/dashboard');
             break;
           case 'shipper':
+          case 'company':
             router.push('/shipper/dashboard');
             break;
           case 'fleet_owner':
+          case 'transporter':
+          case 'truck_owner':
             router.push('/fleet/dashboard');
             break;
           case 'super_admin':
+          case 'admin':
             router.push('/admin/dashboard');
             break;
           default:
-            router.push('/');
+            router.push('/login');
         }
       }
     }

@@ -5,6 +5,7 @@ import { Truck, Shield, Clock, MapPin, ArrowRight, Zap, CheckCircle } from 'luci
 import { ContainerScroll } from './ui/container-scroll-animation';
 import RouteXDashboardPreview from './RouteXDashboardPreview';
 import Component from './ui/component';
+import RouteXFeatureSection from './RouteXFeatureSection';
 
 interface LandingPageProps {
   onNavigate: (portal: string) => void;
@@ -208,8 +209,11 @@ export default function LandingPage({ onNavigate }: LandingPageProps) {
         </ContainerScroll>
       </section>
 
+      {/* Premium Animated RouteX Feature Showcase Section */}
+      <RouteXFeatureSection onNavigate={onNavigate} />
+
       {/* Trust Pillars */}
-      <section id="features" className="py-20 bg-gray-50 border-t border-b border-gray-100">
+      <section className="py-20 bg-gray-50 border-t border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-6">
           <h2 className="text-3xl font-bold text-center mb-16">Designed for Modern Logistics</h2>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">

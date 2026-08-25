@@ -39,10 +39,12 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       return;
     }
 
-    const apiBase = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-    
+    const rawUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    // Strip trailing /api path so Socket.IO connects to root namespace '/' instead of '/api'
+    const socketUrl = rawUrl.replace(/\/api\/?$/, '');
+
     // Create new socket connection
-    const newSocket = io(apiBase, {
+    const newSocket = io(socketUrl, {
       autoConnect: true,
       reconnection: true,
       reconnectionAttempts: 10,
@@ -74,7 +76,7 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     });
 
     newSocket.on('connect_error', (error) => {
-      console.error('Socket.IO connection error:', error);
+      console.warn('Socket.IO connection status:', error.message);
     });
 
     setSocket(newSocket);
@@ -95,9 +97,9 @@ export const SocketProvider: React.FC<{ children: React.ReactNode }> = ({ childr
   };
 
   const leaveBooking = (bookingId: string) => {
-    // Socket.IO rooms are automatically cleaned up, but leaving explicitly if wanted.
+    // Socket.IO rooms are automatically cleaned up on disconnect
     if (socket && isConnected) {
-      console.log(`Leaving booking room implicitly (handled on component unmount / disconnect)`);
+      console.log(`Leaving booking room implicitly`);
     }
   };
 

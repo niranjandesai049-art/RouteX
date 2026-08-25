@@ -1,64 +1,95 @@
-import { app } from './firebase';
-import axios from 'axios';
+import { api } from './api';
 
-// Helper to register the service worker dynamically with environment parameters to avoid hardcoding
-const registerServiceWorker = async (): Promise<ServiceWorkerRegistration | null> => {
-  if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return null;
+// Initialize Firebase App dynamically only on the client-side
+let firebaseApp: any = null;
 
-  try {
-    const config = {
-      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || '',
-      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || '',
-      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || '',
-      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || '',
-      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '',
-      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '',
-      measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID || '',
+const getFirebaseApp = async () => {
+  if (typeof window === 'undefined') return null;
+
+  if (!firebaseApp) {
+    const { initializeApp, getApps } = await import('firebase/app');
+
+    const firebaseConfig = {
+      apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyPlaceholderKeyForRouteXApp12345678',
+      authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN || 'routex-india.firebaseapp.com',
+      projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'routex-india',
+      storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET || 'routex-india.appspot.com',
+      messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID || '123456789012',
+      appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID || '1:123456789012:web:abcdef1234567890',
     };
 
-    const queryParams = new URLSearchParams(config).toString();
-    const swUrl = `/firebase-messaging-sw.js?${queryParams}`;
-
-    const registration = await navigator.serviceWorker.register(swUrl, {
-      scope: '/firebase-cloud-messaging-push-scope',
-    });
-    console.log('FCM Service Worker registered successfully with scope:', registration.scope);
-    return registration;
-  } catch (error) {
-    console.error('FCM Service Worker registration failed:', error);
-    return null;
+    if (!getApps().length) {
+      firebaseApp = initializeApp(firebaseConfig);
+    } else {
+      firebaseApp = getApps()[0];
+    }
   }
+
+  return firebaseApp;
 };
 
-// Reusable NotificationService to manage FCM permission request and token registry
+/**
+ * Register Firebase Service Worker dynamically and await active readiness
+ */
+const registerServiceWorker = async () => {
+  if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+    try {
+      const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || 'AIzaSyPlaceholderKeyForRouteXApp12345678';
+      const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID || 'routex-india';
+      const swUrl = `/firebase-messaging-sw.js?apiKey=${encodeURIComponent(apiKey)}&projectId=${encodeURIComponent(projectId)}`;
+
+      const registration = await navigator.serviceWorker.register(swUrl);
+      
+      // Wait for the service worker to become active and ready
+      const readyRegistration = await navigator.serviceWorker.ready;
+      console.log('FCM Service Worker registered and active:', readyRegistration.scope);
+      return readyRegistration || registration;
+    } catch (err) {
+      console.warn('FCM Service Worker registration deferred:', err);
+      return null;
+    }
+  }
+  return null;
+};
+
 export const NotificationService = {
   /**
-   * Request push notification permission and return FCM token if granted.
-   * Sends the token securely to backend database.
+   * Request Notification permission and retrieve FCM Token safely
    */
   async requestPermissionAndGetToken(userId: string, authToken: string): Promise<string | null> {
-    if (typeof window === 'undefined') return null;
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      console.warn('Notifications not supported in this browser environment.');
+      return null;
+    }
 
     try {
       const permission = await Notification.requestPermission();
       if (permission !== 'granted') {
-        console.warn('Notification permission denied');
+        console.warn('Notification permission was not granted by user.');
         return null;
       }
 
-      // Dynamically import messaging module to prevent SSR/hydration issues during Next.js builds
+      const app = await getFirebaseApp();
+      if (!app) return null;
+
       const { getMessaging, getToken } = await import('firebase/messaging');
       const messaging = getMessaging(app);
 
-      // Register the service worker dynamically
       const serviceWorkerRegistration = await registerServiceWorker();
       if (!serviceWorkerRegistration) {
-        throw new Error('FCM Service Worker registration failed');
+        console.warn('No active service worker registration available for FCM.');
+        return null;
       }
 
-      const fcmToken = await getToken(messaging, {
-        serviceWorkerRegistration,
-      });
+      let fcmToken: string | null = null;
+      try {
+        fcmToken = await getToken(messaging, {
+          serviceWorkerRegistration,
+        });
+      } catch (tokenErr: any) {
+        console.warn('FCM PushManager token subscription notice:', tokenErr.message);
+        return null;
+      }
 
       if (fcmToken) {
         console.log('FCM Registration Token generated successfully:', fcmToken);
@@ -68,20 +99,19 @@ export const NotificationService = {
         console.warn('No FCM registration token returned.');
         return null;
       }
-    } catch (error) {
-      console.error('Error requesting permission and getting FCM token:', error);
+    } catch (error: any) {
+      console.warn('FCM permission or token request notification:', error.message);
       return null;
     }
   },
 
   /**
-   * Send FCM token securely to the NestJS backend
+   * Send FCM token securely to the NestJS backend via api client
    */
   async saveTokenToBackend(userId: string, fcmToken: string, authToken: string): Promise<void> {
-    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     try {
-      await axios.put(
-        `${backendUrl}/users/${userId}/fcm`,
+      await api.put(
+        `/users/${userId}/fcm`,
         { fcmToken },
         {
           headers: {
@@ -90,26 +120,33 @@ export const NotificationService = {
         }
       );
       console.log('FCM Token successfully synchronized with backend database.');
-    } catch (error) {
-      console.error('Failed to save FCM token to backend database:', error);
+    } catch (error: any) {
+      console.warn('FCM token synchronization notification:', error.message);
     }
   },
 
   /**
    * Listen for foreground messages and execute callback
    */
-  async onMessageReceived(callback: (payload: any) => void): Promise<void> {
-    if (typeof window === 'undefined') return;
+  async onMessageReceived(callback: (payload: any) => void): Promise<() => void> {
+    if (typeof window === 'undefined') return () => {};
 
-    try {
-      const { getMessaging, onMessage } = await import('firebase/messaging');
-      const messaging = getMessaging(app);
-      onMessage(messaging, (payload) => {
-        console.log('Received foreground message:', payload);
-        callback(payload);
-      });
-    } catch (error) {
-      console.error('Failed to register foreground message handler:', error);
-    }
+    const app = await getFirebaseApp();
+    if (!app) return () => {};
+
+    const { getMessaging, onMessage } = await import('firebase/messaging');
+    const messaging = getMessaging(app);
+
+    return onMessage(messaging, (payload) => {
+      console.log('Foreground FCM Message received:', payload);
+      callback(payload);
+    });
+  },
+
+  async onMessageListener(callback: (payload: any) => void): Promise<() => void> {
+    return this.onMessageReceived(callback);
   },
 };
+
+// Backwards-compatible export alias
+export const fcmClient = NotificationService;

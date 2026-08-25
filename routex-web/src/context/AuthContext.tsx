@@ -38,6 +38,7 @@ interface AuthContextType {
   login: (phone: string) => Promise<void>;
   register: (name: string, phone: string, role: string, email?: string) => Promise<void>;
   logout: () => void;
+  deleteAccount: () => Promise<void>;
   showToast: (message: string, type?: 'success' | 'error' | 'info') => void;
   backendToken: string | null;
 }
@@ -60,7 +61,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const getDashboardRedirect = (role: string): string => {
-    switch (role?.toLowerCase()) {
+    const cleanRole = role?.toLowerCase()?.trim();
+    switch (cleanRole) {
       case 'driver':
         return '/driver/dashboard';
       case 'shipper':
@@ -74,7 +76,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       case 'admin':
         return '/admin/dashboard';
       default:
-        return '/shipper/dashboard';
+        console.warn(`[RouteX Auth] Unrecognized or missing role '${role}', redirecting to /login.`);
+        return '/login';
     }
   };
 
@@ -163,6 +166,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       const { accessToken, refreshToken, user: authUser } = res.data;
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`[RouteX Auth] OTP Verified successfully. User ID: ${authUser.id}, Role: ${authUser.role}, Phone: ${authUser.phone}`);
+      }
       localStorage.setItem('token', accessToken);
       localStorage.setItem('refreshToken', refreshToken);
       localStorage.setItem('user', JSON.stringify(authUser));
@@ -171,7 +177,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUser(authUser);
       showToast('Authentication successful!', 'success');
 
-      router.push(getDashboardRedirect(authUser.role));
+      const targetRoute = getDashboardRedirect(authUser.role);
+      router.push(targetRoute);
     } catch (err: any) {
       const msg = err.response?.data?.message || 'OTP verification failed. Check the code.';
       showToast(msg, 'error');
@@ -203,6 +210,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     router.push('/login');
   };
 
+  const deleteAccount = async () => {
+    try {
+      await api.delete('/users/me');
+    } catch {}
+    localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
+    localStorage.removeItem('user');
+    setUser(null);
+    setBackendToken(null);
+    showToast('Your account has been permanently deleted.', 'info');
+    router.push('/login');
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -215,6 +235,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         login,
         register,
         logout,
+        deleteAccount,
         showToast,
         backendToken,
       }}

@@ -3,6 +3,7 @@ import {
   Get,
   Param,
   Put,
+  Delete,
   Body,
   UseGuards,
   Request,
@@ -19,7 +20,7 @@ import {
   ApiBearerAuth,
   ApiProperty,
 } from '@nestjs/swagger';
-import { IsString, IsNotEmpty } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional } from 'class-validator';
 
 class UpdateKycDto {
   @ApiProperty({
@@ -37,6 +38,28 @@ class UpdateFcmDto {
   @IsNotEmpty()
   @IsString()
   fcmToken: string;
+}
+
+class UpdateProfileDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  email?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  companyName?: string;
+
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsString()
+  gstNumber?: string;
 }
 
 @ApiTags('Users')
@@ -59,6 +82,27 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User profile returned.' })
   async getProfile(@Request() req: any) {
     return this.usersService.getProfile(req.user.id);
+  }
+
+  @Put('profile')
+  @ApiOperation({ summary: 'Update current user profile' })
+  @ApiResponse({ status: 200, description: 'Profile updated.' })
+  async updateMyProfile(@Request() req: any, @Body() body: UpdateProfileDto) {
+    return this.usersService.updateProfile(req.user.id, body);
+  }
+
+  @Put(':id/profile')
+  @ApiOperation({ summary: 'Update user profile by ID' })
+  @ApiResponse({ status: 200, description: 'Profile updated.' })
+  async updateProfileById(@Param('id') id: string, @Body() body: UpdateProfileDto) {
+    return this.usersService.updateProfile(id, body);
+  }
+
+  @Delete('me')
+  @ApiOperation({ summary: 'Permanently delete authenticated user account' })
+  @ApiResponse({ status: 200, description: 'Account permanently deleted.' })
+  async deleteAccount(@Request() req: any) {
+    return this.usersService.deleteAccount(req.user.id);
   }
 
   @Get(':id')

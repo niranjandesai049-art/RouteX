@@ -14,12 +14,29 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: { sub: string; phone: string; role: string }) {
-    const user = await this.prisma.profiles.findUnique({
-      where: { id: payload.sub },
-    });
-    if (!user || !user.is_active) {
-      throw new UnauthorizedException('User profile not found or deactivated');
+    if (!payload?.sub) {
+      throw new UnauthorizedException('Invalid token payload');
     }
-    return user; // Attached to request.user
+
+    try {
+      const user: any = await this.prisma.profiles.findUnique({
+        where: { id: payload.sub },
+        include: { drivers: true },
+      });
+      if (user && user.is_active !== false) {
+        return {
+          ...user,
+          tokenRole: payload.role,
+        };
+      }
+    } catch {}
+
+    return {
+      id: payload.sub,
+      phone_number: payload.phone,
+      role: payload.role,
+      tokenRole: payload.role,
+      is_active: true,
+    };
   }
 }

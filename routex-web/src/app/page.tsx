@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
 import LandingPage from '../components/LandingPage';
@@ -8,28 +8,6 @@ import LandingPage from '../components/LandingPage';
 export default function HomePage() {
   const { user, loading } = useAuth();
   const router = useRouter();
-
-  useEffect(() => {
-    if (!loading && user) {
-      // Redirect authenticated users to their specific dashboard
-      switch (user.role) {
-        case 'driver':
-          router.push('/driver/dashboard');
-          break;
-        case 'shipper':
-          router.push('/shipper/dashboard');
-          break;
-        case 'fleet_owner':
-          router.push('/fleet/dashboard');
-          break;
-        case 'super_admin':
-          router.push('/admin/dashboard');
-          break;
-        default:
-          break;
-      }
-    }
-  }, [user, loading, router]);
 
   if (loading) {
     return (
@@ -39,11 +17,38 @@ export default function HomePage() {
     );
   }
 
-  // Render landing page for unauthenticated visitors
+  // Render RouteX Landing/Home page for all visitors (both unauthenticated and authenticated)
   return (
     <LandingPage
       onNavigate={(portal) => {
-        if (portal === 'shipper' || portal === 'driver' || portal === 'fleet' || portal === 'admin') {
+        if (user) {
+          // If user is already authenticated, take them directly to requested portal
+          switch (portal) {
+            case 'driver':
+              router.push('/driver/dashboard');
+              break;
+            case 'shipper':
+              router.push('/shipper/dashboard');
+              break;
+            case 'fleet':
+              router.push('/fleet/dashboard');
+              break;
+            case 'admin':
+              router.push('/admin/dashboard');
+              break;
+            default:
+              if (user.role === 'driver') {
+                router.push('/driver/dashboard');
+              } else if (user.role === 'fleet_owner') {
+                router.push('/fleet/dashboard');
+              } else if (user.role === 'super_admin') {
+                router.push('/admin/dashboard');
+              } else {
+                router.push('/shipper/dashboard');
+              }
+          }
+        } else {
+          // If unauthenticated, redirect to login
           router.push('/login');
         }
       }}

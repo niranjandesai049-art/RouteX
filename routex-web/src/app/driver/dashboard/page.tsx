@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import Link from 'next/link';
 import { useAuth } from '../../../context/AuthContext';
 import { useSocket } from '../../../context/SocketContext';
 import { ProtectedLayout } from '../../../components/ProtectedLayout';
@@ -137,7 +138,8 @@ export default function DriverDashboardPage() {
       showToast('Shipment accepted!', 'success');
       await fetchActiveBooking();
     } catch (err: any) {
-      showToast('Could not accept job', 'error');
+      const msg = err.response?.data?.message || err.message || 'Could not accept job';
+      showToast(msg, 'error');
     }
   };
 
@@ -188,10 +190,10 @@ export default function DriverDashboardPage() {
     <ProtectedLayout allowedRoles={['driver']}>
       <div className="flex flex-col min-h-screen bg-slate-900 text-white">
         <header className="bg-slate-950 text-white py-4 px-6 flex items-center justify-between sticky top-0 z-40 border-b border-slate-800">
-          <div className="flex items-center space-x-3">
+          <Link href="/" className="flex items-center space-x-3 hover:opacity-90 transition cursor-pointer">
             <div className="w-8 h-8 bg-blue-600 rounded-md flex items-center justify-center font-bold text-lg">R</div>
             <span className="font-extrabold tracking-tight">RouteX <span className="text-xs text-blue-400 font-semibold uppercase ml-1 px-1.5 py-0.5 bg-blue-900/50 rounded">Driver App</span></span>
-          </div>
+          </Link>
           <div className="flex items-center space-x-4">
             <span className="text-xs font-bold text-slate-400">Welcome, {user?.name || 'Driver'}</span>
             <button
