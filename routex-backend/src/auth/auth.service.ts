@@ -78,6 +78,103 @@ export class AuthService {
   }
 
   /**
+   * Authenticate or register user via Google OAuth
+   */
+  async googleAuth(
+    email: string,
+    name?: string,
+    googleId?: string,
+    preferredRole?: string,
+    phone?: string,
+    photoUrl?: string,
+  ) {
+    const assignedRole = this.mapRole(preferredRole);
+    let profile: any = await this.withDbTimeout(async () => {
+      return this.prisma.profiles.findFirst({
+        where: { email },
+        include: { drivers: { include: { trucks: true } } },
+      });
+    }, 3500, null);
+
+    if (!profile) {
+      const trimmedName = (name || '').trim();
+      const names = trimmedName ? trimmedName.split(' ') : [];
+      const firstName = names[0] || 'User';
+      const lastName = names.slice(1).join(' ') || '';
+      const userId = 'usr_' + randomUUID().substring(0, 18);
+
+      profile = await this.withDbTimeout(async () => {
+        await this.prisma.users.create({
+          data: {
+            id: userId,
+            email,
+            phone: phone || null,
+            aud: 'authenticated',
+            role: 'authenticated',
+          },
+        }).catch(() => null);
+
+        return this.prisma.profiles.upsert({
+          where: { id: userId },
+          create: {
+            id: userId,
+            first_name: firstName,
+            last_name: lastName,
+            email,
+            phone_number: phone || null,
+            avatar_url: photoUrl || null,
+            role: assignedRole,
+            verification_state: verification_status.verified,
+            is_active: true,
+          },
+          update: {},
+        }).catch(() => null);
+      }, 3500, null);
+
+      if (!profile) {
+        profile = {
+          id: userId,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          phone_number: phone || null,
+          role: assignedRole,
+          verification_state: verification_status.verified,
+          is_active: true,
+          drivers: null,
+        };
+      }
+    }
+
+    const effectiveRole = profile.drivers || profile.role === user_role.driver ? user_role.driver : (profile.role || user_role.shipper);
+    const payload = {
+      sub: profile.id,
+      phone: profile.phone_number || '',
+      role: effectiveRole,
+    };
+    const accessToken = this.jwtService.sign(payload);
+    const refreshTokenRaw = 'rt_' + randomUUID();
+
+    const resolvedName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim();
+
+    return {
+      token: accessToken,
+      accessToken,
+      refreshToken: refreshTokenRaw,
+      user: {
+        id: profile.id,
+        name: resolvedName,
+        phone: profile.phone_number,
+        email: profile.email,
+        role: effectiveRole,
+        phone_verified: true,
+        email_verified: true,
+        isVerified: true,
+      },
+    };
+  }
+
+  /**
    * Primary authentication step 2: Verify 6-digit OTP and create authenticated session.
    */
   async verifyPhoneOtp(
@@ -119,7 +216,7 @@ export class AuthService {
     if (profile) {
       if (profile.drivers || profile.role === user_role.driver || requestedRole === user_role.driver || cachedUser?.role === user_role.driver) {
         profile.role = user_role.driver;
-        if (profile.role !== user_role.driver) {
+        if (requestedRole && requestedRole !== profile.role) {
           await this.prisma.profiles.update({
             where: { id: profile.id },
             data: { role: user_role.driver },
@@ -215,25 +312,20 @@ export class AuthService {
       ? user_role.driver
       : (profile.role || cachedUser?.role || user_role.shipper);
 
-    if (profile.id && profile.role !== effectiveRole) {
-      await this.prisma.profiles.update({
-        where: { id: profile.id },
-        data: { role: effectiveRole },
-      }).catch(() => null);
-      profile.role = effectiveRole;
-    }
-
     const resolvedName = [profile.first_name, profile.last_name].filter(Boolean).join(' ').trim() || cachedUser?.name || '';
     const resolvedEmail = profile.email && !profile.email.endsWith('@routex.in') && !profile.email.endsWith('@phone.routex') ? profile.email : (cachedUser?.email || undefined);
 
     // Save to user registry cache
-    this.userRegistry.set(cleanPhone, {
+    const userCacheRecord = {
       id: profile.id,
       role: effectiveRole,
       name: resolvedName,
       email: resolvedEmail,
       drivers: effectiveRole === user_role.driver ? (profile.drivers || { id: profile.id }) : null,
-    });
+    };
+    this.userRegistry.set(cleanPhone, userCacheRecord);
+    this.userRegistry.set(rawTenDigit, userCacheRecord);
+    this.userRegistry.set(`+91${rawTenDigit}`, userCacheRecord);
 
     const payload = {
       sub: profile.id,

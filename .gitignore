@@ -37,13 +37,22 @@ ios/build/
 .yarn/
 .turbo/
 
-# Environment files
+# Environment files and credentials
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 .env.*
+*.env
+**/.env
+**/.env.*
+**/.env.local
+firebase-service-account.json
+*.pem
+*.key
+*.cert
+*.crt
 
 # Logs and databases
 *.log
@@ -65,6 +74,3 @@ Thumbs.db
 *.swo
 *.sublime-project
 *.sublime-workspace
-
-# Local configuration
-firebase-service-account.json
