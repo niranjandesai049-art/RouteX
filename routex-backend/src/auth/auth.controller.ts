@@ -102,10 +102,60 @@ class RegisterPushTokenDto {
   platform: 'android' | 'ios' | 'web';
 }
 
+class GoogleAuthDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsNotEmpty()
+  @IsEmail()
+  email: string;
+
+  @ApiProperty({ example: 'Ramesh Sharma', required: false })
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiProperty({ example: 'google-uid-12345', required: false })
+  @IsOptional()
+  @IsString()
+  googleId?: string;
+
+  @ApiProperty({ example: 'shipper', required: false })
+  @IsOptional()
+  @IsString()
+  role?: string;
+
+  @ApiProperty({ example: '+919876543210', required: false })
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @ApiProperty({ example: 'https://lh3.googleusercontent.com/a/default', required: false })
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
+}
+
 @ApiTags('Authentication')
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
+
+  @Post('google')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Authenticate or register user via Google OAuth' })
+  @ApiResponse({ status: 200, description: 'Google authentication successful.' })
+  async googleAuth(@Body() body: GoogleAuthDto) {
+    if (!body.email) {
+      throw new BadRequestException('Email address is required for Google Sign-In.');
+    }
+    return this.authService.googleAuth(
+      body.email,
+      body.name,
+      body.googleId,
+      body.role,
+      body.phone,
+      body.photoUrl,
+    );
+  }
 
   @Post('phone/send-otp')
   @HttpCode(HttpStatus.OK)
