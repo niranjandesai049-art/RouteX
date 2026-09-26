@@ -38,6 +38,22 @@ const mapBackendStatusToSimulator = (status: string): string => {
   }
 };
 
+const safeAddress = (addr: any, fallback: string = 'Delhi'): { address: string; otp?: string } => {
+  if (!addr) return { address: fallback };
+  if (typeof addr === 'object') return { address: addr.address || fallback, otp: addr.otp };
+  if (typeof addr === 'string') {
+    try {
+      const trimmed = addr.trim();
+      if (trimmed.startsWith('{')) {
+        const parsed = JSON.parse(trimmed);
+        return { address: parsed.address || addr, otp: parsed.otp };
+      }
+    } catch {}
+    return { address: addr };
+  }
+  return { address: fallback };
+};
+
 export default function DriverDashboardPage() {
   const { user, logout, showToast } = useAuth();
   const { socket } = useSocket();
@@ -56,19 +72,15 @@ export default function DriverDashboardPage() {
       );
 
       if (assigned) {
+        const p = safeAddress(assigned.pickup_address, 'Delhi');
+        const d = safeAddress(assigned.delivery_address, 'Mumbai');
         setActiveShipment({
           id: assigned.id,
-          pickup: typeof assigned.pickup_address === 'string' 
-            ? JSON.parse(assigned.pickup_address).address 
-            : assigned.pickup_address?.address || 'Delhi',
-          pickupOtp: typeof assigned.pickup_address === 'string'
-            ? JSON.parse(assigned.pickup_address).otp
-            : assigned.pickup_address?.otp || '',
-          destination: typeof assigned.delivery_address === 'string' 
-            ? JSON.parse(assigned.delivery_address).address 
-            : assigned.delivery_address?.address || 'Mumbai',
+          pickup: p.address,
+          pickupOtp: p.otp || '',
+          destination: d.address,
           status: mapBackendStatusToSimulator(assigned.status),
-          price: parseFloat(assigned.quoted_price.toString()),
+          price: parseFloat((assigned.quoted_price || 0).toString()),
           truckType: assigned.cargo_description || 'Tata Ace',
           weight: assigned.estimated_weight_kg ? `${parseFloat(assigned.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
         });
@@ -76,19 +88,15 @@ export default function DriverDashboardPage() {
         // 2. Otherwise, find any booking that is searching for a driver (available pool)
         const available = bookings.find((b) => b.status === 'searching');
         if (available) {
+          const p = safeAddress(available.pickup_address, 'Delhi');
+          const d = safeAddress(available.delivery_address, 'Mumbai');
           setActiveShipment({
             id: available.id,
-            pickup: typeof available.pickup_address === 'string' 
-              ? JSON.parse(available.pickup_address).address 
-              : available.pickup_address?.address || 'Delhi',
-            pickupOtp: typeof available.pickup_address === 'string'
-              ? JSON.parse(available.pickup_address).otp
-              : available.pickup_address?.otp || '',
-            destination: typeof available.delivery_address === 'string' 
-              ? JSON.parse(available.delivery_address).address 
-              : available.delivery_address?.address || 'Mumbai',
+            pickup: p.address,
+            pickupOtp: p.otp || '',
+            destination: d.address,
             status: 'PENDING', // Mapped status for simulator to prompt "Accept"
-            price: parseFloat(available.quoted_price.toString()),
+            price: parseFloat((available.quoted_price || 0).toString()),
             truckType: available.cargo_description || 'Tata Ace',
             weight: available.estimated_weight_kg ? `${parseFloat(available.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
           });

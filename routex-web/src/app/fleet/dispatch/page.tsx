@@ -177,8 +177,22 @@ export default function FleetDispatchPage() {
             ) : (
               <div className="space-y-3 overflow-y-auto max-h-[320px] pr-1">
                 {pendingAssignments.map((booking) => {
-                  const pickupStr = typeof booking.pickup_address === 'string' ? JSON.parse(booking.pickup_address) : booking.pickup_address;
-                  const destStr = typeof booking.delivery_address === 'string' ? JSON.parse(booking.delivery_address) : booking.delivery_address;
+                  let pickupStr: any = booking.pickup_address;
+                  let destStr: any = booking.delivery_address;
+                  try {
+                    if (typeof booking.pickup_address === 'string' && booking.pickup_address.trim().startsWith('{')) {
+                      pickupStr = JSON.parse(booking.pickup_address);
+                    } else if (typeof booking.pickup_address === 'string') {
+                      pickupStr = { address: booking.pickup_address };
+                    }
+                  } catch {}
+                  try {
+                    if (typeof booking.delivery_address === 'string' && booking.delivery_address.trim().startsWith('{')) {
+                      destStr = JSON.parse(booking.delivery_address);
+                    } else if (typeof booking.delivery_address === 'string') {
+                      destStr = { address: booking.delivery_address };
+                    }
+                  } catch {}
                   
                   return (
                     <div key={booking.id} className="border border-[#EBEBEB] p-4 rounded-xl space-y-3 text-xs">

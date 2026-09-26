@@ -303,7 +303,7 @@ export class BookingService {
       this.logger.error('Failed to dispatch driver notifications:', e.message);
     }
 
-    return booking;
+    return this.formatBookingResponse(booking);
   }
 
   async findAvailable(driverId?: string) {
@@ -321,7 +321,7 @@ export class BookingService {
     });
 
     if (!driverId) {
-      return bookings;
+      return bookings.map((b) => this.formatBookingResponse(b));
     }
 
     const driverLoc = DriversService.getDriverLocation(driverId) || {
@@ -348,13 +348,27 @@ export class BookingService {
         }
       }
     }
-    return filteredBookings;
+    return filteredBookings.map((b) => this.formatBookingResponse(b));
   }
 
-  async findAll() {
-    this.logger.log('[BOOKINGS] Querying shipments queue from database...');
+  async findAll(user?: any, shipperIdParam?: string) {
+    this.logger.log(`[BOOKINGS] Querying shipments queue (user: ${user?.id || 'none'}, role: ${user?.role || 'none'})...`);
     try {
+      const whereClause: Prisma.BookingWhereInput = {};
+
+      const targetShipperId =
+        shipperIdParam || (user?.role === user_role.shipper ? user?.id : undefined);
+
+      if (targetShipperId) {
+        if (!this.isValidUuid(targetShipperId)) {
+          this.logger.warn(`[BOOKINGS] Non-UUID shipperId encountered: ${targetShipperId}. Returning empty array.`);
+          return [];
+        }
+        whereClause.shipper_id = targetShipperId;
+      }
+
       const bookings = await this.prisma.booking.findMany({
+        where: whereClause,
         include: {
           profiles: true, // Shipper profile
           booking_stops: {
@@ -371,7 +385,7 @@ export class BookingService {
         },
       });
       this.logger.log(`[BOOKINGS] Successfully fetched ${bookings.length} shipments`);
-      return bookings;
+      return bookings.map((b) => this.formatBookingResponse(b));
     } catch (err: any) {
       this.logger.error(`[BOOKINGS] Database query in findAll failed: ${err.message}`, err.stack);
       throw err;
@@ -380,6 +394,9 @@ export class BookingService {
 
   async findOne(id: string) {
     this.logger.log(`[BOOKINGS] Querying booking ${id} from database...`);
+    if (!this.isValidUuid(id)) {
+      throw new NotFoundException(`Booking with id ${id} not found`);
+    }
     try {
       const booking = await this.prisma.booking.findUnique({
         where: { id },
@@ -397,7 +414,7 @@ export class BookingService {
         },
       });
       if (!booking) throw new NotFoundException('Booking not found');
-      return booking;
+      return this.formatBookingResponse(booking);
     } catch (err: any) {
       if (err instanceof NotFoundException) throw err;
       this.logger.error(`[BOOKINGS] Database query in findOne failed for ID ${id}: ${err.message}`, err.stack);
@@ -405,7 +422,7 @@ export class BookingService {
     }
   }
 
-  private safeParseJson(value: any): Record<string, any> {
+  public safeParseJson(value: any): Record<string, any> {
     if (!value) return {};
     if (typeof value === 'object') return value;
     if (typeof value === 'string') {
@@ -420,7 +437,17 @@ export class BookingService {
     return {};
   }
 
+  public formatBookingResponse(booking: any) {
+    if (!booking) return booking;
+    return {
+      ...booking,
+      pickup_address: this.safeParseJson(booking.pickup_address),
+      delivery_address: this.safeParseJson(booking.delivery_address),
+    };
+  }
+
   async assignDriver(id: string, driverId: string) {
+    if (!this.isValidUuid(id)) throw new NotFoundException('Booking not found');
     const booking = await this.prisma.booking.findUnique({
       where: { id },
     });
@@ -540,10 +567,11 @@ export class BookingService {
       }
     }
 
-    return updated;
+    return this.formatBookingResponse(updated);
   }
 
   async updateStatus(id: string, status: booking_status) {
+    if (!this.isValidUuid(id)) throw new NotFoundException('Booking not found');
     const booking = await this.prisma.booking.findUnique({
       where: { id },
     });
@@ -643,10 +671,11 @@ export class BookingService {
       }
     }
 
-    return updated;
+    return this.formatBookingResponse(updated);
   }
 
   async submitEpod(id: string, signature: string) {
+    if (!this.isValidUuid(id)) throw new NotFoundException('Booking not found');
     const booking = await this.prisma.booking.findUnique({
       where: { id },
     });
@@ -708,7 +737,7 @@ export class BookingService {
       }
     }
 
-    return updated;
+    return this.formatBookingResponse(updated);
   }
 
   async submitStopEpod(bookingId: string, stopId: string, signature: string) {

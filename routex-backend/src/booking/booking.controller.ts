@@ -5,6 +5,7 @@ import {
   Put,
   Body,
   Param,
+  Query,
   UseGuards,
   Request,
   Logger,
@@ -117,10 +118,10 @@ export class BookingController {
   @Get()
   @ApiOperation({ summary: 'Get all shipments queue' })
   @ApiResponse({ status: 200, description: 'List of shipments returned.' })
-  async findAll(@Request() req: any) {
-    this.logger.log(`[BOOKINGS API] GET /api/bookings invoked by user: ${req?.user?.id || 'anonymous'}`);
+  async findAll(@Request() req: any, @Query('shipperId') shipperId?: string) {
+    this.logger.log(`[BOOKINGS API] GET /api/bookings invoked by user: ${req?.user?.id || 'anonymous'}, role: ${req?.user?.role}, filter shipperId: ${shipperId || 'none'}`);
     try {
-      const results = await this.bookingService.findAll();
+      const results = await this.bookingService.findAll(req?.user, shipperId);
       this.logger.log(`[BOOKINGS API] GET /api/bookings successfully returned ${results.length} bookings`);
       return results;
     } catch (err: any) {

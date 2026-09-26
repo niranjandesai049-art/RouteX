@@ -34,6 +34,11 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  private isValidUuid(id?: string | null): boolean {
+    if (!id || typeof id !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+  }
+
   private async withDbTimeout<T>(
     promiseFn: () => Promise<T>,
     timeoutMs = 3500,
@@ -101,7 +106,7 @@ export class AuthService {
       const names = trimmedName ? trimmedName.split(' ') : [];
       const firstName = names[0] || 'User';
       const lastName = names.slice(1).join(' ') || '';
-      const userId = 'usr_' + randomUUID().substring(0, 18);
+      const userId = randomUUID();
 
       profile = await this.withDbTimeout(async () => {
         await this.prisma.users.create({
@@ -236,7 +241,7 @@ export class AuthService {
       const lastName = names.slice(1).join(' ') || '';
       const assignedEmail = (email || cachedUser?.email) && !(email || cachedUser?.email)?.endsWith('@routex.in') ? (email || cachedUser?.email) : '';
       const assignedRole = requestedRole || cachedUser?.role || user_role.shipper;
-      const userId = cachedUser?.id || ('usr_' + randomUUID().substring(0, 18));
+      const userId = (cachedUser?.id && this.isValidUuid(cachedUser.id)) ? cachedUser.id : randomUUID();
 
       profile = await this.withDbTimeout(async () => {
         let existingUser = await this.prisma.users.findFirst({
@@ -442,18 +447,20 @@ export class AuthService {
       }
     }
 
-    const profile = await this.withDbTimeout(async () => {
-      return this.prisma.profiles.findUnique({
-        where: { id: userId },
-        include: {
-          drivers: {
+    const profile = this.isValidUuid(userId)
+      ? await this.withDbTimeout(async () => {
+          return this.prisma.profiles.findUnique({
+            where: { id: userId },
             include: {
-              trucks: true,
+              drivers: {
+                include: {
+                  trucks: true,
+                },
+              },
             },
-          },
-        },
-      });
-    }, 3500, null);
+          });
+        }, 3500, null)
+      : null;
 
     if (!profile) {
       return {

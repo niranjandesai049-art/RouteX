@@ -36,9 +36,14 @@ export const bookingsService = {
     return response.data;
   },
 
-  async findAll(): Promise<BookingResponse[]> {
-    const response = await api.get<BookingResponse[]>('/bookings');
-    return response.data;
+  async findAll(shipperId?: string): Promise<BookingResponse[]> {
+    const url = shipperId ? `/bookings?shipperId=${encodeURIComponent(shipperId)}` : '/bookings';
+    const response = await api.get<any>(url);
+    const data = response.data;
+    if (Array.isArray(data)) return data;
+    if (data && Array.isArray(data.bookings)) return data.bookings;
+    if (data && Array.isArray(data.data)) return data.data;
+    return [];
   },
 
   async findOne(id: string): Promise<BookingResponse> {

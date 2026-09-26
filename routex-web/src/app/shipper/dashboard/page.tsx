@@ -32,26 +32,63 @@ export default function ShipperDashboardPage() {
     setIsLoading(true);
     try {
       // 1. Fetch bookings
-      const bookings = await bookingsService.findAll();
-      const mapped = bookings.map((b: BookingResponse) => ({
-        id: b.id,
-        pickup: typeof b.pickup_address === 'string' 
-          ? JSON.parse(b.pickup_address).address 
-          : b.pickup_address?.address || 'Delhi',
-        pickupOtp: (b.status === 'assigned' || b.status === 'at_pickup')
-          ? (typeof b.pickup_address === 'string'
-              ? JSON.parse(b.pickup_address).otp
-              : b.pickup_address?.otp || '')
-          : undefined,
-        destination: typeof b.delivery_address === 'string' 
-          ? JSON.parse(b.delivery_address).address 
-          : b.delivery_address?.address || 'Mumbai',
-        status: b.status,
-        price: parseFloat(b.quoted_price.toString()),
-        truckType: b.cargo_description || 'Tata Ace',
-        weight: b.estimated_weight_kg ? `${parseFloat(b.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
-        delayPredicted: 'AI Calculating...',
-      }));
+      const bookings = await bookingsService.findAll(user?.id);
+      const list = Array.isArray(bookings) ? bookings : [];
+      const mapped = list.map((b: BookingResponse) => {
+        let pickupAddr = 'Delhi';
+        let pickupOtp: string | undefined = undefined;
+        let destAddr = 'Mumbai';
+
+        try {
+          if (typeof b.pickup_address === 'string') {
+            const trimmed = b.pickup_address.trim();
+            if (trimmed.startsWith('{')) {
+              const parsed = JSON.parse(trimmed);
+              pickupAddr = parsed.address || b.pickup_address;
+              pickupOtp = parsed.otp;
+            } else {
+              pickupAddr = b.pickup_address;
+            }
+          } else if (b.pickup_address && typeof b.pickup_address === 'object') {
+            pickupAddr = b.pickup_address.address || 'Delhi';
+            pickupOtp = b.pickup_address.otp;
+          }
+        } catch {
+          pickupAddr = typeof b.pickup_address === 'string' ? b.pickup_address : 'Delhi';
+        }
+
+        if (b.status !== 'assigned' && b.status !== 'at_pickup') {
+          pickupOtp = undefined;
+        }
+
+        try {
+          if (typeof b.delivery_address === 'string') {
+            const trimmed = b.delivery_address.trim();
+            if (trimmed.startsWith('{')) {
+              const parsed = JSON.parse(trimmed);
+              destAddr = parsed.address || b.delivery_address;
+            } else {
+              destAddr = b.delivery_address;
+            }
+          } else if (b.delivery_address && typeof b.delivery_address === 'object') {
+            destAddr = b.delivery_address.address || 'Mumbai';
+          }
+        } catch {
+          destAddr = typeof b.delivery_address === 'string' ? b.delivery_address : 'Mumbai';
+        }
+
+        return {
+          id: b.id,
+          pickup: pickupAddr,
+          pickupOtp,
+          destination: destAddr,
+          status: b.status,
+          price: parseFloat((b.quoted_price || 0).toString()),
+          truckType: b.cargo_description || 'Tata Ace',
+          weight: b.estimated_weight_kg ? `${parseFloat(b.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
+          delayPredicted: 'AI Calculating...',
+        };
+      });
       setShipments(mapped);
 
       // 2. Fetch wallet balance

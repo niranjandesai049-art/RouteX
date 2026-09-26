@@ -55,16 +55,39 @@ export default function AdminPanel() {
       // Fetch active bookings
       const bookingsRes = await api.get('/bookings');
       if (bookingsRes.status === 200) {
-        const data = bookingsRes.data;
-        const mapped = data.map((b: any) => ({
-          id: b.id,
-          pickup: typeof b.pickup_address === 'string' ? JSON.parse(b.pickup_address).address : b.pickup_address?.address || 'Delhi',
-          destination: typeof b.delivery_address === 'string' ? JSON.parse(b.delivery_address).address : b.delivery_address?.address || 'Mumbai',
-          status: b.status,
-          price: parseFloat(b.quoted_price.toString()),
-          truckType: b.cargo_description || 'Tata Ace',
-          weight: b.estimated_weight_kg ? `${parseFloat(b.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
-        }));
+        const data = Array.isArray(bookingsRes.data) ? bookingsRes.data : (bookingsRes.data?.bookings || []);
+        const mapped = data.map((b: any) => {
+          let pAddr = 'Delhi';
+          let dAddr = 'Mumbai';
+          try {
+            if (typeof b.pickup_address === 'string' && b.pickup_address.trim().startsWith('{')) {
+              pAddr = JSON.parse(b.pickup_address).address || b.pickup_address;
+            } else if (typeof b.pickup_address === 'string') {
+              pAddr = b.pickup_address;
+            } else if (b.pickup_address && typeof b.pickup_address === 'object') {
+              pAddr = b.pickup_address.address || 'Delhi';
+            }
+          } catch {}
+          try {
+            if (typeof b.delivery_address === 'string' && b.delivery_address.trim().startsWith('{')) {
+              dAddr = JSON.parse(b.delivery_address).address || b.delivery_address;
+            } else if (typeof b.delivery_address === 'string') {
+              dAddr = b.delivery_address;
+            } else if (b.delivery_address && typeof b.delivery_address === 'object') {
+              dAddr = b.delivery_address.address || 'Mumbai';
+            }
+          } catch {}
+
+          return {
+            id: b.id,
+            pickup: pAddr,
+            destination: dAddr,
+            status: b.status,
+            price: parseFloat((b.quoted_price || 0).toString()),
+            truckType: b.cargo_description || 'Tata Ace',
+            weight: b.estimated_weight_kg ? `${parseFloat(b.estimated_weight_kg.toString()) / 1000} Tons` : '1 Ton',
+          };
+        });
         setBookings(mapped);
       }
     } catch (err) {
