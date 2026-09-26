@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, IsNumber, Min } from 'class-validator';
+import { IsNotEmpty, IsString, IsNumber, Min, IsOptional, IsArray } from 'class-validator';
 
 export class PredictPricingDto {
   @IsNotEmpty()
@@ -9,6 +9,8 @@ export class PredictPricingDto {
   @IsString()
   destination: string;
 
+  @IsOptional()
+  @IsArray()
   waypoints?: string[];
 
   @IsNotEmpty()
@@ -18,23 +20,42 @@ export class PredictPricingDto {
 
   @IsNotEmpty()
   @IsNumber()
-  @Min(0.1)
+  @Min(0.01)
   weightTons: number;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  truckCategory: string;
+  truckCategory?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
   @IsString()
-  weather: string;
+  truckType?: string;
 
-  @IsNotEmpty()
+  @IsOptional()
+  @IsString()
+  material?: string;
+
+  @IsOptional()
+  @IsString()
+  loadType?: string;
+
+  @IsOptional()
+  @IsString()
+  weather?: string;
+
+  @IsOptional()
   @IsNumber()
-  @Min(0)
-  fuelPrice: number;
+  fuelPrice?: number;
 
-  @IsNotEmpty()
+  @IsOptional()
+  @IsNumber()
+  currentFuelPrice?: number;
+
+  @IsOptional()
   @IsString()
-  demandLevel: string;
+  demandLevel?: string;
+
+  @IsOptional()
+  @IsString()
+  traffic?: string;
 }

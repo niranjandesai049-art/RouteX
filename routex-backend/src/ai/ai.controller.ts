@@ -23,32 +23,6 @@ import {
 export class AiController {
   constructor(private readonly pricingService: PricingService) {}
 
-  @Post('pricing')
-  @ApiOperation({
-    summary:
-      'Calculate dynamic pricing for freight shipment routes using Groq AI',
-  })
-  @ApiResponse({
-    status: 201,
-    description: 'Dynamic price estimation completed successfully.',
-    schema: {
-      type: 'object',
-      properties: {
-        estimatedPrice: { type: 'number', example: 45000 },
-        confidence: { type: 'number', example: 0.95 },
-        reason: {
-          type: 'string',
-          example: 'Calculated using Groq dynamic fuel pricing adjustment.',
-        },
-      },
-    },
-  })
-  async calculateDynamicPricing(
-    @Body() dto: CreatePricingDto,
-  ): Promise<PricingResult> {
-    return this.pricingService.estimatePrice(dto);
-  }
-
   @Post('recommend-truck')
   @ApiOperation({
     summary:

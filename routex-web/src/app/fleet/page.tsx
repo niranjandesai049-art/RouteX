@@ -87,7 +87,7 @@ export default function FleetDashboardIndex() {
       setActivityLogs(logsData.slice(0, 6));
 
       // 6. Fetch AI recommendations
-      const aiInsightsRes = await api.post('/api/ai/insights', {
+      const aiInsightsRes = await api.post('/ai/insights', {
         totalTrucks: trucksData.length,
         activeTrucks: active,
         idleTrucks: Math.max(0, trucksData.length - active),

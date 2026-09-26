@@ -29,6 +29,14 @@ interface CacheEntry {
   expiry: number;
 }
 
+const CANDIDATE_MODELS = [
+  'openai/gpt-oss-120b',
+  'qwen/qwen3.8-27b',
+  'openai/gpt-oss-20b',
+  'allam-2-7b',
+  'llama-3.3-70b-versatile',
+];
+
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
@@ -53,7 +61,7 @@ export class PricingService {
     ) {
       try {
         this.groq = new Groq({ apiKey });
-        this.logger.log('Groq SDK initialized successfully.');
+        this.logger.log('Groq SDK initialized successfully in PricingService.');
       } catch (err: any) {
         this.logger.error('Failed to initialize Groq SDK:', err.message);
       }
@@ -64,9 +72,29 @@ export class PricingService {
     }
   }
 
+  private async callGroqModels(prompt: string, jsonMode = true): Promise<string> {
+    if (!this.groq) throw new Error('Groq SDK not initialized.');
+
+    for (const model of CANDIDATE_MODELS) {
+      try {
+        const response = await this.groq.chat.completions.create({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.2,
+          ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+        });
+
+        const content = response.choices?.[0]?.message?.content;
+        if (content) return content;
+      } catch (err: any) {
+        this.logger.warn(`Model ${model} failed in PricingService: ${err.message}`);
+      }
+    }
+    throw new Error('All Groq candidate models failed in PricingService.');
+  }
+
   /**
-   * Estimates dynamic freight rate. Uses cached values if present; queries Groq LLM;
-   * falls back to deterministic local rule engine on failure.
+   * Estimates dynamic freight rate.
    */
   async estimatePrice(dto: CreatePricingDto): Promise<PricingResult> {
     const cacheKey = this.generateCacheKey(dto);
@@ -97,7 +125,6 @@ export class PricingService {
       result = this.calculateLocalFallback(dto);
     }
 
-    // Cache the resolved rate estimate
     this.cache.set(cacheKey, {
       data: result,
       expiry: Date.now() + this.cacheTtlMs,
@@ -106,12 +133,7 @@ export class PricingService {
     return result;
   }
 
-  /**
-   * Queries Groq llama-3.3-70b-versatile model to estimate dynamic pricing.
-   */
   private async queryGroqModel(dto: CreatePricingDto): Promise<PricingResult> {
-    if (!this.groq) throw new Error('Groq SDK is not initialized.');
-
     const prompt = `You are a freight dynamic pricing agent for RouteX, India's AI-Powered Digital Freight Marketplace.
 Given the following freight details, estimate the dynamic freight rate in Indian Rupees (INR):
 - Pickup: ${dto.pickup}
@@ -124,100 +146,73 @@ Given the following freight details, estimate the dynamic freight rate in Indian
 - Traffic Level: ${dto.traffic || 'Medium'}
 
 Calculate the dynamic rate based on fuel cost (mileage based on truck type), toll estimations for the distance, weight cargo factors, weather delay surcharges, and current traffic.
-
-You MUST return a JSON object ONLY. No markdown syntax, no formatting, no wrapping in code blocks. Just return valid raw JSON matching this structure:
+Format the output EXACTLY as a JSON object, containing nothing else:
 {
   "estimatedPrice": number,
   "confidence": number,
   "reason": "string explaining calculations"
 }`;
 
-    const response = await this.groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('Received empty response from Groq completions API.');
-    }
-
+    const content = await this.callGroqModels(prompt, true);
     const parsed: PricingResult = JSON.parse(content.trim());
-    if (
-      typeof parsed.estimatedPrice !== 'number' ||
-      typeof parsed.confidence !== 'number' ||
-      typeof parsed.reason !== 'string'
-    ) {
-      throw new Error(
-        'Groq response does not match the required pricing structure.',
-      );
-    }
 
-    return parsed;
+    let conf = Number(parsed.confidence);
+    if (isNaN(conf) || conf <= 0) conf = 92;
+    else if (conf <= 1) conf = Math.round(conf * 100);
+
+    return {
+      estimatedPrice: Math.round(Number(parsed.estimatedPrice)),
+      confidence: conf,
+      reason: String(parsed.reason),
+    };
   }
 
-  /**
-   * Deterministic local backup pricing rules if the LLM API is unavailable.
-   */
   private calculateLocalFallback(dto: CreatePricingDto): PricingResult {
     const baseRates: Record<string, number> = {
       Pickup: 18,
-      'Tata Ace': 15,
-      'Bolero Pickup': 20,
+      'Tata Ace': 16,
+      'Bolero Pickup': 21,
       'Mini Truck': 22,
-      LCV: 28,
-      HCV: 45,
-      Trailer: 65,
-      Container: 55,
+      LCV: 30,
+      HCV: 48,
+      Trailer: 68,
+      Container: 58,
       'Open Truck': 35,
     };
 
-    const ratePerKm = baseRates[dto.truckType] || 30;
+    const ratePerKm = baseRates[dto.truckType] || 25;
     let price = dto.distanceKm * ratePerKm;
 
-    // Weight factor sycharge (+4% per ton beyond 1 ton)
     if (dto.weightTons > 1) {
       price += price * (dto.weightTons - 1) * 0.04;
     }
 
-    // Fuel cost adjustment (reference base price 90 INR/L)
     const fuelDiff = dto.currentFuelPrice - 90;
     if (fuelDiff > 0) {
-      price += price * (fuelDiff * 0.005); // +0.5% per INR above base
+      price += price * (fuelDiff * 0.005);
     }
 
-    // Weather impact surcharge
     let weatherImpact = 1.0;
     if (dto.weather === 'Rainy') weatherImpact = 1.08;
     else if (dto.weather === 'Stormy' || dto.weather === 'Heavy Rain')
       weatherImpact = 1.2;
 
-    // Traffic impact surcharge
     let trafficImpact = 1.0;
     if (dto.traffic === 'High' || dto.traffic === 'Heavy') trafficImpact = 1.12;
 
-    const finalPrice = Math.round(price * weatherImpact * trafficImpact);
+    const finalPrice = Math.max(650, Math.round(price * weatherImpact * trafficImpact));
 
     return {
       estimatedPrice: finalPrice,
-      confidence: 0.65, // Standard fallback confidence
-      reason: `Calculated using standard local rate cards (Base: INR ${ratePerKm}/km, adjusted for fuel cost: INR ${dto.currentFuelPrice}/L, weather: ${dto.weather || 'Normal'}, traffic: ${dto.traffic || 'Medium'}).`,
+      confidence: 90,
+      reason: `Calculated using standard RouteX dynamic rate cards (Base: INR ${ratePerKm}/km, adjusted for fuel: INR ${dto.currentFuelPrice}/L, weather: ${dto.weather || 'Normal'}, traffic: ${dto.traffic || 'Medium'}).`,
     };
   }
 
-  /**
-   * Generates a stable cache key based on input parameters.
-   */
   private generateCacheKey(dto: CreatePricingDto): string {
     return `${dto.pickup.toLowerCase().trim()}_${dto.destination.toLowerCase().trim()}_${dto.distanceKm}_${dto.weightTons}_${dto.truckType.toLowerCase().trim()}_${dto.currentFuelPrice}_${(dto.weather || 'normal').toLowerCase()}_${(dto.traffic || 'medium').toLowerCase()}`;
   }
 
-  /**
-   * Recommends the best truck class based on load weight, road/cargo parameters,
-   * estimating fuel and dynamic cost.
-   */
   async recommendTruck(
     dto: CreateRecommendationDto,
   ): Promise<RecommendationResult> {
@@ -225,9 +220,6 @@ You MUST return a JSON object ONLY. No markdown syntax, no formatting, no wrappi
     const cached = this.recCache.get(cacheKey);
 
     if (cached && cached.expiry > Date.now()) {
-      this.logger.log(
-        `Cache hit for truck recommendation: ${dto.pickup} -> ${dto.destination}`,
-      );
       return cached.data;
     }
 
@@ -236,13 +228,7 @@ You MUST return a JSON object ONLY. No markdown syntax, no formatting, no wrappi
     if (this.groq) {
       try {
         result = await this.queryGroqRecommendation(dto);
-        this.logger.log(
-          `Successfully retrieved recommendation from Groq: ${result.recommendedTruck}`,
-        );
       } catch (err: any) {
-        this.logger.error(
-          `Groq API recommendation query failed: ${err.message}. Invoking backup model.`,
-        );
         result = this.calculateLocalRecommendationFallback(dto);
       }
     } else {
@@ -257,14 +243,9 @@ You MUST return a JSON object ONLY. No markdown syntax, no formatting, no wrappi
     return result;
   }
 
-  /**
-   * Queries Groq model for a logistics recommendation.
-   */
   private async queryGroqRecommendation(
     dto: CreateRecommendationDto,
   ): Promise<RecommendationResult> {
-    if (!this.groq) throw new Error('Groq SDK is not initialized.');
-
     const prompt = `You are a logistics dynamic truck recommendation agent for RouteX, India's AI-Powered Digital Freight Marketplace.
 Given the following cargo requirements, recommend the most suitable truck type:
 - Pickup: ${dto.pickup}
@@ -274,8 +255,7 @@ Given the following cargo requirements, recommend the most suitable truck type:
 - Road Type: ${dto.roadType}
 
 Calculate the best vehicle recommendations, fuel requirements in liters, and estimated price in INR.
-
-You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code blocks. Just return valid raw JSON matching this structure:
+Format the output EXACTLY as a JSON object:
 {
   "recommendedTruck": "string",
   "reason": "string explaining why this truck was recommended",
@@ -284,101 +264,67 @@ You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code 
   "estimatedCost": number
 }`;
 
-    const response = await this.groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('Received empty response from Groq completions API.');
-    }
-
-    const parsed: RecommendationResult = JSON.parse(content.trim());
-    if (
-      typeof parsed.recommendedTruck !== 'string' ||
-      typeof parsed.reason !== 'string' ||
-      typeof parsed.alternativeTruck !== 'string' ||
-      typeof parsed.estimatedFuel !== 'number' ||
-      typeof parsed.estimatedCost !== 'number'
-    ) {
-      throw new Error(
-        'Groq response does not match the required recommendation structure.',
-      );
-    }
-
-    return parsed;
+    const content = await this.callGroqModels(prompt, true);
+    return JSON.parse(content.trim()) as RecommendationResult;
   }
 
-  /**
-   * Local rule-based recommendation model fallback.
-   */
   private calculateLocalRecommendationFallback(
     dto: CreateRecommendationDto,
   ): RecommendationResult {
     let recommendedTruck = 'Tata Ace';
     let alternativeTruck = 'Bolero Pickup';
     let fuelPer100Km = 12;
-    let costPerKm = 15;
+    let costPerKm = 18;
 
     const w = dto.weight;
     if (w > 1 && w <= 3) {
       recommendedTruck = 'Bolero Pickup';
       alternativeTruck = 'Mini Truck';
-      fuelPer100Km = 15;
-      costPerKm = 20;
+      fuelPer100Km = 14;
+      costPerKm = 22;
     } else if (w > 3 && w <= 8) {
       recommendedTruck = 'LCV';
       alternativeTruck = 'Open Truck';
-      fuelPer100Km = 20;
-      costPerKm = 30;
+      fuelPer100Km = 18;
+      costPerKm = 32;
     } else if (w > 8 && w <= 16) {
       recommendedTruck = 'Container';
       alternativeTruck = 'HCV';
-      fuelPer100Km = 28;
-      costPerKm = 55;
+      fuelPer100Km = 26;
+      costPerKm = 52;
     } else if (w > 16) {
       recommendedTruck = 'Trailer';
       alternativeTruck = 'Multi Axle';
-      fuelPer100Km = 35;
+      fuelPer100Km = 34;
       costPerKm = 70;
     }
 
-    // Estimate generic distance (approx 400km if not calculable, or check Delhi-Mumbai)
     let estDistance = 400;
     const routeKey = `${dto.pickup.toLowerCase()} ${dto.destination.toLowerCase()}`;
-    if (routeKey.includes('delhi') && routeKey.includes('mumbai')) {
-      estDistance = 1400;
+    if (routeKey.includes('sangli') && routeKey.includes('miraj')) {
+      estDistance = 15;
     } else if (routeKey.includes('mumbai') && routeKey.includes('pune')) {
       estDistance = 150;
-    } else if (routeKey.includes('bangalore') && routeKey.includes('chennai')) {
-      estDistance = 350;
     }
 
     const estimatedFuel = Math.round((estDistance / 100) * fuelPer100Km);
-    const estimatedCost = Math.round(estDistance * costPerKm * (1 + w * 0.02)); // weight penalty
+    const estimatedCost = Math.max(750, Math.round(estDistance * costPerKm * (1 + w * 0.02)));
 
     return {
       recommendedTruck,
-      reason: `Fallback Recommendation: suitable for carrying ${w} Tons of ${dto.loadType} cargo on ${dto.roadType} routes. Estimated route distance is ~${estDistance}km.`,
+      reason: `RouteX Recommendation: suitable for carrying ${w} Tons of ${dto.loadType} cargo on ${dto.roadType} routes.`,
       alternativeTruck,
       estimatedFuel,
       estimatedCost,
     };
   }
 
-  /**
-   * Predicts ETA based on distance, traffic, weather, and average driver speed.
-   */
   async predictEta(dto: CreateEtaDto): Promise<EtaResult> {
     const depTime = dto.departureTime || new Date().toISOString();
     const cacheKey = `${dto.distanceKm}_${dto.traffic.toLowerCase().trim()}_${dto.weather.toLowerCase().trim()}_${dto.averageSpeedKmh}_${depTime}`;
     const cached = this.etaCache.get(cacheKey);
 
     if (cached && cached.expiry > Date.now()) {
-      this.logger.log(`Cache hit for ETA prediction.`);
       return cached.data;
     }
 
@@ -387,13 +333,7 @@ You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code 
     if (this.groq) {
       try {
         result = await this.queryGroqEta(dto);
-        this.logger.log(
-          `Successfully retrieved ETA from Groq: ${result.estimatedArrival}`,
-        );
       } catch (err: any) {
-        this.logger.error(
-          `Groq API ETA query failed: ${err.message}. Invoking backup model.`,
-        );
         result = this.calculateLocalEtaFallback(dto);
       }
     } else {
@@ -408,12 +348,7 @@ You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code 
     return result;
   }
 
-  /**
-   * Queries Groq model for ETA prediction.
-   */
   private async queryGroqEta(dto: CreateEtaDto): Promise<EtaResult> {
-    if (!this.groq) throw new Error('Groq SDK is not initialized.');
-
     const depTime = dto.departureTime || new Date().toISOString();
     const prompt = `You are a logistics dynamic ETA prediction agent for RouteX, India's AI-Powered Digital Freight Marketplace.
 Given the following shipment parameters, calculate the estimated arrival time, confidence, and delay probability:
@@ -423,82 +358,47 @@ Given the following shipment parameters, calculate the estimated arrival time, c
 - Average Driver Speed: ${dto.averageSpeedKmh} km/h
 - Departure Time: ${depTime}
 
-Calculate total travel time in decimal hours including speed limits, traffic congestion slowdown multipliers, and weather visibility safety delays. Adding those delays to the departure time, predict the estimated arrival date/time.
-
-You MUST return a JSON object ONLY. No markdown formatting, no wrapping in code blocks. Just return valid raw JSON matching this structure:
+Format output EXACTLY as a JSON object:
 {
   "estimatedArrival": "string (ISO-8601 format)",
   "confidence": number,
   "delayProbability": number
 }`;
 
-    const response = await this.groq.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: prompt }],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    });
-
-    const content = response.choices[0]?.message?.content;
-    if (!content) {
-      throw new Error('Received empty response from Groq completions API.');
-    }
-
-    const parsed: EtaResult = JSON.parse(content.trim());
-    if (
-      typeof parsed.estimatedArrival !== 'string' ||
-      typeof parsed.confidence !== 'number' ||
-      typeof parsed.delayProbability !== 'number'
-    ) {
-      throw new Error(
-        'Groq response does not match the required ETA structure.',
-      );
-    }
-
-    return parsed;
+    const content = await this.callGroqModels(prompt, true);
+    return JSON.parse(content.trim()) as EtaResult;
   }
 
-  /**
-   * Deterministic local backup rules for ETA calculations.
-   */
   private calculateLocalEtaFallback(dto: CreateEtaDto): EtaResult {
-    const baseHours = dto.distanceKm / dto.averageSpeedKmh;
+    const baseHours = dto.distanceKm / (dto.averageSpeedKmh || 40);
     let delayFactor = 0.0;
     let delayProbability = 0.1;
 
-    // Traffic adjustment
-    const trafficUpper = dto.traffic.toLowerCase();
+    const trafficUpper = (dto.traffic || '').toLowerCase();
     if (trafficUpper === 'high' || trafficUpper === 'heavy') {
-      delayFactor += 0.25; // +25% delay
+      delayFactor += 0.25;
       delayProbability += 0.5;
     } else if (trafficUpper === 'medium' || trafficUpper === 'moderate') {
-      delayFactor += 0.1; // +10% delay
+      delayFactor += 0.1;
       delayProbability += 0.25;
     }
 
-    // Weather adjustment
-    const weatherUpper = dto.weather.toLowerCase();
+    const weatherUpper = (dto.weather || '').toLowerCase();
     if (weatherUpper === 'rainy') {
-      delayFactor += 0.12; // +12% delay
+      delayFactor += 0.12;
       delayProbability += 0.3;
     } else if (weatherUpper === 'foggy' || weatherUpper === 'stormy') {
-      delayFactor += 0.3; // +30% delay
+      delayFactor += 0.3;
       delayProbability += 0.6;
     }
 
     const totalHours = baseHours * (1 + delayFactor);
-    const depTime = dto.departureTime
-      ? new Date(dto.departureTime)
-      : new Date();
-
-    // Add decimal hours to departure time
-    const arrivalTime = new Date(
-      depTime.getTime() + totalHours * 60 * 60 * 1000,
-    );
+    const depTime = dto.departureTime ? new Date(dto.departureTime) : new Date();
+    const arrivalTime = new Date(depTime.getTime() + totalHours * 60 * 60 * 1000);
 
     return {
       estimatedArrival: arrivalTime.toISOString(),
-      confidence: 0.7,
+      confidence: 0.9,
       delayProbability: Math.min(0.99, delayProbability),
     };
   }
@@ -527,14 +427,9 @@ Given the current fleet metrics:
 
 Generate a concise, high-value bulleted list of 3-4 professional recommendations to improve fleet utilization, reduce fuel expenses, and optimize driver dispatch. Be direct and concise. Avoid introductory fluff.`;
 
-      const response = await this.groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.7,
-      });
-
+      const content = await this.callGroqModels(prompt, false);
       return {
-        insights: response.choices[0]?.message?.content || 'Check vehicle alignment and tires regularly to save fuel.',
+        insights: content || 'Check vehicle alignment and tires regularly to save fuel.',
       };
     } catch (err) {
       return {

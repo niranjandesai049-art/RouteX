@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ShieldCheck, Plus, Wallet, MapPin, Truck, Calendar, FileText, CheckCircle2, TrendingUp, AlertTriangle } from 'lucide-react';
 import { ShipmentMap } from './maps/MapLoader';
+import { api } from '../lib/api';
 
 const geocodeAddressAsync = async (address: string): Promise<[number, number]> => {
   if (!address) return [28.6139, 77.2090];
@@ -42,24 +43,24 @@ interface Shipment {
   truckType: string;
   weight: string;
   delayPredicted: string;
+  material?: string;
 }
 
 interface ShipperPortalProps {
   shipments: Shipment[];
-  onAddShipment: (newShipment: Omit<Shipment, 'id' | 'status' | 'delayPredicted'> & { distanceKm?: number }) => void;
+  onAddShipment: (newShipment: Omit<Shipment, 'id' | 'status' | 'delayPredicted'> & { distanceKm?: number; material?: string }) => void;
   walletBalance: number;
 }
 
 export default function ShipperPortal({ shipments, onAddShipment, walletBalance }: ShipperPortalProps) {
   const [isGstVerified, setIsGstVerified] = useState(false);
   const [gstNo, setGstNo] = useState('');
-  const [isKycModalOpen, setIsKycModalOpen] = useState(false);
   
   // Booking Form State
   const [pickup, setPickup] = useState('');
   const [dest, setDest] = useState('');
   const [weight, setWeight] = useState('');
-  const [truckType, setTruckType] = useState('Tata Ace');
+  const [truckType, setTruckType] = useState('Bolero Pickup');
   const [material, setMaterial] = useState('');
 
   // AI Predictions
@@ -69,12 +70,84 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
   const [aiReason, setAiReason] = useState<string | null>(null);
   const [aiBreakdown, setAiBreakdown] = useState<any | null>(null);
   const [aiConfidence, setAiConfidence] = useState<number | null>(null);
+  const [recommendedTruck, setRecommendedTruck] = useState<string | null>(null);
   const [isLoadingAi, setIsLoadingAi] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const handleVerifyGst = (e: React.FormEvent) => {
     e.preventDefault();
     if (gstNo.length === 15) {
       setIsGstVerified(true);
+    }
+  };
+
+  const fetchAiPricing = async (
+    p: string,
+    d: string,
+    w: number,
+    t: string,
+    m: string,
+    activeCheck = () => true
+  ) => {
+    try {
+      setIsLoadingAi(true);
+      setAiError(null);
+
+      const pCoords = await geocodeAddressAsync(p);
+      const dCoords = await geocodeAddressAsync(d);
+      
+      let distanceKm = 15;
+      try {
+        const osrmRes = await fetch(
+          `https://router.project-osrm.org/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=false`
+        );
+        if (osrmRes.ok) {
+          const osrmData = await osrmRes.json();
+          if (osrmData.routes && osrmData.routes[0]) {
+            distanceKm = Math.round(osrmData.routes[0].distance / 1000);
+          }
+        }
+      } catch {
+        // Fallback distance calculation
+        distanceKm = 15;
+      }
+
+      if (!activeCheck()) return;
+      setAiDistance(distanceKm);
+
+      const pricingRes = await api.post('/ai/pricing', {
+        pickup: p,
+        destination: d,
+        distanceKm,
+        weightTons: w,
+        truckCategory: t,
+        material: m || 'General Cargo',
+        weather: 'Sunny',
+        fuelPrice: 94.5,
+        demandLevel: 'High'
+      });
+
+      if (activeCheck() && pricingRes.data) {
+        const data = pricingRes.data;
+        setAiPrice(data.estimatedPrice);
+        setAiDelay(data.etaMinutes);
+        setAiReason(data.reason);
+        setAiBreakdown(data.pricingBreakdown);
+        setAiConfidence(data.confidence);
+        setRecommendedTruck(data.recommendedTruck || null);
+        setAiError(null);
+      }
+    } catch (err: any) {
+      console.error('Failed to calculate rate:', err);
+      if (activeCheck()) {
+        const msg = err.response?.data?.message || err.message || 'AI pricing calculation failed';
+        setAiError(typeof msg === 'string' ? msg : 'Unable to calculate AI rate');
+        setAiPrice(null);
+      }
+    } finally {
+      if (activeCheck()) {
+        setIsLoadingAi(false);
+      }
     }
   };
 
@@ -87,76 +160,23 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
       setAiReason(null);
       setAiBreakdown(null);
       setAiConfidence(null);
+      setRecommendedTruck(null);
+      setAiError(null);
       return;
     }
 
     let active = true;
-    const calculateRate = async () => {
-      try {
-        setIsLoadingAi(true);
-        const pCoords = await geocodeAddressAsync(pickup);
-        const dCoords = await geocodeAddressAsync(dest);
-        
-        // Fetch driving route distance from OSRM
-        const osrmRes = await fetch(
-          `https://router.project-osrm.org/route/v1/driving/${pCoords[1]},${pCoords[0]};${dCoords[1]},${dCoords[0]}?overview=false`
-        );
-        
-        let distanceKm = Math.floor(200 + Math.random() * 600); // fallback
-        if (osrmRes.ok) {
-          const osrmData = await osrmRes.json();
-          if (osrmData.routes && osrmData.routes[0]) {
-            distanceKm = Math.round(osrmData.routes[0].distance / 1000);
-          }
-        }
+    const timer = setTimeout(() => {
+      fetchAiPricing(pickup, dest, parsedWeight, truckType, material, () => active);
+    }, 600);
 
-        if (!active) return;
-
-        setAiDistance(distanceKm);
-
-        const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        const pricingRes = await fetch(`${backendUrl}/ai/pricing`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            pickup,
-            destination: dest,
-            distanceKm,
-            weightTons: parsedWeight,
-            truckCategory: truckType,
-            weather: 'Sunny',
-            fuelPrice: 94.5,
-            demandLevel: 'High'
-          })
-        });
-
-        if (pricingRes.ok && active) {
-          const data = await pricingRes.json();
-          setAiPrice(data.estimatedPrice);
-          setAiDelay(data.etaMinutes);
-          setAiReason(data.reason);
-          setAiBreakdown(data.pricingBreakdown);
-          setAiConfidence(data.confidence);
-        }
-      } catch (err) {
-        console.error('Failed to calculate rate:', err);
-      } finally {
-        if (active) {
-          setIsLoadingAi(false);
-        }
-      }
-    };
-
-    calculateRate();
-    
     return () => {
       active = false;
+      clearTimeout(timer);
     };
-  }, [pickup, dest, weight, truckType]);
+  }, [pickup, dest, weight, truckType, material]);
 
-  const handleBook = (e: React.FormEvent) => {
+  const handleBook = async (e: React.FormEvent) => {
     e.preventDefault();
     const parsedWeight = parseFloat(weight);
     if (!pickup || !dest || !weight || isNaN(parsedWeight) || parsedWeight <= 0) {
@@ -165,11 +185,11 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
     }
 
     const baseRates: Record<string, number> = {
-      'Tata Ace': 15, 'Bolero Pickup': 20, 'LCV': 28, 'HCV': 45, 'Trailer': 65, 'Container': 55
+      'Tata Ace': 16, 'Bolero Pickup': 21, 'LCV': 30, 'HCV': 48, 'Trailer': 68, 'Container': 58
     };
-    const distance = aiDistance || Math.floor(200 + Math.random() * 600);
+    const distance = aiDistance || 15;
     const rate = baseRates[truckType] || 25;
-    const price = aiPrice || Math.round(distance * rate);
+    const price = aiPrice && aiPrice > 0 ? aiPrice : Math.max(650, Math.round(distance * rate));
 
     onAddShipment({
       pickup,
@@ -178,7 +198,8 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
       truckType,
       weight: `${weight} Tons`,
       distanceKm: distance,
-    } as any);
+      material: material || 'General Cargo',
+    });
 
     // Reset Form
     setPickup('');
@@ -191,6 +212,8 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
     setAiReason(null);
     setAiBreakdown(null);
     setAiConfidence(null);
+    setRecommendedTruck(null);
+    setAiError(null);
   };
 
   return (
@@ -221,7 +244,7 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
                   onChange={(e) => setGstNo(e.target.value.toUpperCase())}
                   placeholder="Enter 15-Digit GSTIN" 
                   maxLength={15}
-                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm uppercase outline-none focus:border-blue-600"
+                  className="w-full border border-gray-200 rounded-lg p-2.5 text-sm uppercase outline-none focus:border-blue-600 text-gray-900 bg-white"
                   required
                 />
                 <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 rounded-lg text-sm transition">
@@ -244,30 +267,30 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
             
             <form onSubmit={handleBook} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Pickup Address</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Pickup Address</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-3 text-gray-400" size={16} />
                   <input 
                     type="text" 
                     value={pickup}
                     onChange={(e) => setPickup(e.target.value)}
-                    placeholder="Pickup location" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 pl-9 pr-4 text-sm focus:border-blue-600 outline-none"
+                    placeholder="Pickup location (e.g. Sangli)" 
+                    className="w-full bg-white border border-gray-300 rounded-lg py-2 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none shadow-sm"
                     required
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Destination</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Destination</label>
                 <div className="relative">
                   <MapPin className="absolute left-3 top-3 text-gray-400" size={16} />
                   <input 
                     type="text" 
                     value={dest}
                     onChange={(e) => setDest(e.target.value)}
-                    placeholder="Delivery location" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 pl-9 pr-4 text-sm focus:border-blue-600 outline-none"
+                    placeholder="Delivery location (e.g. Miraj)" 
+                    className="w-full bg-white border border-gray-300 rounded-lg py-2 pl-9 pr-4 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none shadow-sm"
                     required
                   />
                 </div>
@@ -275,34 +298,35 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
 
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Weight (Tons)</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Weight (Tons)</label>
                   <input 
                     type="number" 
+                    step="0.1"
                     value={weight}
                     onChange={(e) => setWeight(e.target.value)}
-                    placeholder="e.g. 15" 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:border-blue-600 outline-none"
+                    placeholder="e.g. 5" 
+                    className="w-full bg-white border border-gray-300 rounded-lg py-2 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none shadow-sm"
                     required
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Material Type</label>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Material Type</label>
                   <input 
                     type="text" 
                     value={material}
                     onChange={(e) => setMaterial(e.target.value)}
-                    placeholder="Steel, Pipes, etc." 
-                    className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:border-blue-600 outline-none"
+                    placeholder="e.g. Steel" 
+                    className="w-full bg-white border border-gray-300 rounded-lg py-2 px-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none shadow-sm"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-500 mb-1.5 uppercase">Truck Category</label>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 uppercase">Truck Category</label>
                 <select 
                   value={truckType}
                   onChange={(e) => setTruckType(e.target.value)}
-                  className="w-full bg-gray-50 border border-gray-200 rounded-lg py-2 px-3 text-sm focus:border-blue-600 outline-none"
+                  className="w-full bg-white border border-gray-300 rounded-lg py-2 px-3 text-sm text-gray-900 focus:border-blue-600 focus:ring-1 focus:ring-blue-600 outline-none shadow-sm cursor-pointer"
                 >
                   <option value="Tata Ace">Tata Ace (1.5T)</option>
                   <option value="Bolero Pickup">Bolero Pickup (2.5T)</option>
@@ -315,78 +339,104 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
 
               {/* AI Cost and Delay Estimation */}
               {pickup && dest && (
-                <div className="bg-blue-50/50 border border-blue-100 rounded-xl p-4 space-y-3">
+                <div className="bg-blue-50/70 border border-blue-100 rounded-xl p-4 space-y-3">
                   {(!weight || parseFloat(weight) <= 0) ? (
                     <p className="text-xs text-amber-600 font-semibold flex items-center">
-                      <AlertTriangle size={14} className="mr-1 text-amber-500" /> Enter a valid weight to calculate price.
+                      <AlertTriangle size={14} className="mr-1 text-amber-500" /> Enter weight greater than 0 to predict rate.
                     </p>
                   ) : isLoadingAi ? (
-                    <div className="flex items-center justify-center py-2 space-x-2">
-                      <div className="w-4 h-4 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                      <span className="text-xs font-semibold text-blue-600 animate-pulse">Running RouteX AI Pricing Engine...</span>
+                    <div className="flex items-center justify-center py-4 space-x-2">
+                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                      <span className="text-xs font-bold text-blue-700 animate-pulse">Running RouteX AI Pricing Engine (Groq)...</span>
                     </div>
-                  ) : (
+                  ) : aiError ? (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs space-y-1">
+                      <p className="text-red-700 font-bold flex items-center">
+                        <AlertTriangle size={14} className="mr-1 text-red-500" /> AI Pricing Unavailable
+                      </p>
+                      <p className="text-red-600">{aiError}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const w = parseFloat(weight);
+                          if (w > 0) fetchAiPricing(pickup, dest, w, truckType, material);
+                        }}
+                        className="text-blue-600 hover:text-blue-800 font-bold text-[11px] underline mt-1 inline-block"
+                      >
+                        Retry AI Prediction
+                      </button>
+                    </div>
+                  ) : aiPrice && aiPrice > 0 ? (
                     <>
                       <div className="flex items-center justify-between text-xs">
                         <span className="flex items-center text-blue-700 font-bold">
                           <TrendingUp size={14} className="mr-1" /> AI Rate Predictor (Groq-Llama)
                         </span>
                         {aiConfidence !== null && (
-                          <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-100 px-1.5 py-0.5 rounded font-black">
+                          <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded font-black">
                             {aiConfidence}% Match
                           </span>
                         )}
                       </div>
+
                       <div className="flex justify-between items-baseline">
-                        <span className="text-2xl font-extrabold text-blue-600">₹{(aiPrice || 0).toLocaleString()}</span>
+                        <span className="text-2xl font-extrabold text-blue-600">₹{aiPrice.toLocaleString()}</span>
                         {aiDelay !== null && (
-                          <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded flex items-center font-semibold">
-                            <AlertTriangle size={12} className="mr-1" /> Est. Transit: {aiDelay} mins
+                          <span className="text-xs text-amber-700 bg-amber-50 px-2 py-0.5 rounded flex items-center font-semibold border border-amber-100">
+                            <AlertTriangle size={12} className="mr-1 text-amber-600" /> Est. Transit: {aiDelay >= 60 ? `${Math.floor(aiDelay / 60)}h ${aiDelay % 60}m` : `${aiDelay} mins`}
                           </span>
                         )}
                       </div>
 
+                      {recommendedTruck && recommendedTruck !== truckType && (
+                        <div className="bg-amber-50 border border-amber-200 rounded-lg p-2 text-[11px] text-amber-800">
+                          <span className="font-bold">AI Recommendation:</span> Consider <span className="font-bold">{recommendedTruck}</span> for this {weight}T {material || 'cargo'} load.
+                        </div>
+                      )}
+
                       {aiBreakdown && (
-                        <div className="border-t border-blue-100/50 pt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-medium text-slate-500">
+                        <div className="border-t border-blue-100/70 pt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] font-medium text-slate-600">
                           <div className="flex justify-between">
-                            <span>Dist. Cost:</span>
-                            <span className="font-bold text-slate-700">₹{aiBreakdown.distanceCost}</span>
+                            <span>Dist. Cost ({aiDistance || 15} km):</span>
+                            <span className="font-bold text-slate-800">₹{aiBreakdown.distanceCost}</span>
                           </div>
                           <div className="flex justify-between">
-                            <span>Fuel Cost:</span>
-                            <span className="font-bold text-slate-700">₹{aiBreakdown.fuelCost}</span>
+                            <span>Fuel Surcharge:</span>
+                            <span className="font-bold text-slate-800">₹{aiBreakdown.fuelCost}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Weather:</span>
-                            <span className="font-bold text-slate-700">₹{aiBreakdown.weatherImpact}</span>
+                            <span className="font-bold text-slate-800">₹{aiBreakdown.weatherImpact}</span>
                           </div>
                           <div className="flex justify-between">
                             <span>Demand Surcharge:</span>
-                            <span className="font-bold text-slate-700">₹{aiBreakdown.demandMultiplier}</span>
+                            <span className="font-bold text-slate-800">x{aiBreakdown.demandMultiplier}</span>
                           </div>
                         </div>
                       )}
 
                       {aiReason && (
-                        <p className="text-[10px] italic text-slate-500 border-t border-blue-100/50 pt-1.5 leading-relaxed font-medium">
+                        <p className="text-[10px] italic text-slate-600 border-t border-blue-100/70 pt-1.5 leading-relaxed font-medium">
                           &ldquo;{aiReason}&rdquo;
                         </p>
                       )}
                     </>
+                  ) : (
+                    <p className="text-xs text-slate-500 italic">Enter shipment details to calculate live AI rate.</p>
                   )}
                 </div>
               )}
 
               <button 
                 type="submit" 
-                disabled={!pickup || !dest || !weight || parseFloat(weight) <= 0}
+                disabled={!pickup || !dest || !weight || parseFloat(weight) <= 0 || isLoadingAi}
                 className={`w-full font-semibold py-3 rounded-lg text-sm transition ${
-                  (!pickup || !dest || !weight || parseFloat(weight) <= 0)
+                  (!pickup || !dest || !weight || parseFloat(weight) <= 0 || isLoadingAi)
                     ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : 'bg-blue-600 hover:bg-blue-700 text-white'
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-sm'
                 }`}
               >
-                Find AI Best Match & Book
+                {isLoadingAi ? 'Calculating AI Match...' : 'Find AI Best Match & Book'}
               </button>
             </form>
           </div>
@@ -459,7 +509,7 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
             {shipments.length === 0 ? (
               <div className="p-12 text-center text-gray-400">
                 <Truck size={48} className="mx-auto mb-4 text-gray-200" />
-                <p>No active shipments. Book your first freight load using the sidebar.</p>
+                <p>No active shipments. Book your first freight load using the form.</p>
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -477,7 +527,7 @@ export default function ShipperPortal({ shipments, onAddShipment, walletBalance 
                   <tbody>
                     {shipments.map(s => (
                       <tr key={s.id} className="border-b border-gray-100 hover:bg-gray-50 transition">
-                        <td className="p-4 font-bold text-blue-600">{s.id}</td>
+                        <td className="p-4 font-bold text-blue-600">{s.id.substring(0, 8)}...</td>
                         <td className="p-4">
                           <div className="text-xs">
                             <p className="font-semibold text-gray-900"><span className="text-blue-500">Pick:</span> {s.pickup}</p>
