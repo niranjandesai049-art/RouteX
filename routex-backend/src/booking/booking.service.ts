@@ -19,35 +19,66 @@ import {
   Prisma,
 } from '@prisma/client';
 import { ApiProperty } from '@nestjs/swagger';
+import {
+  IsString,
+  IsNotEmpty,
+  IsNumber,
+  IsOptional,
+  IsArray,
+} from 'class-validator';
+import { Type } from 'class-transformer';
 
 export class CreateBookingDto {
-  @ApiProperty({ example: 'usr_shipper_123' })
-  shipperId: string;
+  @ApiProperty({ example: '6fd7348c-5d66-4775-b4a8-b25412b56333', required: false })
+  @IsOptional()
+  @IsString()
+  shipperId?: string;
 
   @ApiProperty({ example: 'Mumbai, MH, India' })
+  @IsNotEmpty()
+  @IsString()
   pickupAddress: string;
 
   @ApiProperty({ example: 'Delhi, India' })
+  @IsNotEmpty()
+  @IsString()
   destAddress: string;
 
-  @ApiProperty({ example: 1400 })
-  distanceKm: number;
+  @ApiProperty({ example: 1400, required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  distanceKm?: number;
 
-  @ApiProperty({ example: 5 })
-  weightTons: number;
+  @ApiProperty({ example: 5, required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  weightTons?: number;
 
-  @ApiProperty({ example: 'Tata 407' })
-  truckCategory: string;
+  @ApiProperty({ example: 'Tata 407', required: false })
+  @IsOptional()
+  @IsString()
+  truckCategory?: string;
 
-  @ApiProperty({ example: 'Electronics' })
-  loadType: string;
+  @ApiProperty({ example: 'Electronics', required: false })
+  @IsOptional()
+  @IsString()
+  loadType?: string;
 
-  @ApiProperty({ example: 25000 })
-  price: number;
+  @ApiProperty({ example: 25000, required: false })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  price?: number;
 
   @ApiProperty({ example: ['Surat, India', 'Jaipur, India'], required: false })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
   waypoints?: string[];
 }
+
 
 @Injectable()
 export class BookingService {
@@ -60,32 +91,59 @@ export class BookingService {
     private readonly mapService: MapService,
   ) {}
 
+  private isValidUuid(id?: string): boolean {
+    if (!id || typeof id !== 'string') return false;
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+  }
+
   async create(dto: CreateBookingDto) {
+    this.logger.log(
+      `[BOOKINGS] Creating booking for shipper: ${dto.shipperId || 'unassigned'}, pickup: ${dto.pickupAddress}, dest: ${dto.destAddress}, price: ${dto.price}`,
+    );
+
     const bookingRef =
       'RX-' +
       Math.floor(100000 + Math.random() * 900000)
         .toString()
         .toUpperCase();
 
-    const pickupLoc = await this.mapService.geocode(dto.pickupAddress);
-    const deliveryLoc = await this.mapService.geocode(dto.destAddress);
+    // Parse destination if it was passed as stringified JSON with stops
+    let cleanDestAddress = dto.destAddress || '';
+    let waypointsList = dto.waypoints && Array.isArray(dto.waypoints) ? [...dto.waypoints] : [];
+
+    if (typeof cleanDestAddress === 'string' && cleanDestAddress.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(cleanDestAddress);
+        if (parsed.address) cleanDestAddress = parsed.address;
+        if (Array.isArray(parsed.stops)) {
+          waypointsList = [...waypointsList, ...parsed.stops];
+        }
+      } catch {}
+    }
+
+    const pickupAddressStr = dto.pickupAddress || 'Mumbai, Maharashtra, India';
+    const pickupLoc = await this.mapService.geocode(pickupAddressStr);
+    const deliveryLoc = await this.mapService.geocode(cleanDestAddress || pickupAddressStr);
 
     const pickupJson = {
-      address: dto.pickupAddress,
+      address: pickupAddressStr,
       latitude: pickupLoc?.latitude || 28.6139, // Default Delhi coordinate
       longitude: pickupLoc?.longitude || 77.209,
       otp: Math.floor(1000 + Math.random() * 9000).toString(), // Save pickup OTP in JSON
     };
 
     const deliveryJson = {
-      address: dto.destAddress,
+      address: cleanDestAddress || 'Destination',
       latitude: deliveryLoc?.latitude || 19.076, // Default Mumbai coordinate
       longitude: deliveryLoc?.longitude || 72.8777,
       otp: Math.floor(1000 + Math.random() * 9000).toString(), // Save delivery OTP in JSON
       signature: null as string | null,
     };
 
-    const payloadKg = Math.round(dto.weightTons * 1000);
+    const weightTons = Number(dto.weightTons) > 0 ? Number(dto.weightTons) : 1;
+    const payloadKg = Math.round(weightTons * 1000);
+    const priceNum = Number(dto.price) > 0 ? Number(dto.price) : 5000;
+    const cargoDescription = dto.loadType || dto.truckCategory || 'General Freight';
 
     const stopsArray: any[] = [];
     let stopOrder = 1;
@@ -94,7 +152,7 @@ export class BookingService {
     stopsArray.push({
       stop_order: stopOrder++,
       stop_type: stop_type.pickup,
-      address: dto.pickupAddress,
+      address: pickupAddressStr,
       latitude: new Prisma.Decimal(pickupJson.latitude),
       longitude: new Prisma.Decimal(pickupJson.longitude),
       otp: pickupJson.otp,
@@ -102,8 +160,8 @@ export class BookingService {
     });
 
     // 2. Add Waypoints
-    if (dto.waypoints && dto.waypoints.length > 0) {
-      for (const waypoint of dto.waypoints) {
+    if (waypointsList.length > 0) {
+      for (const waypoint of waypointsList) {
         const wpLoc = await this.mapService.geocode(waypoint);
         stopsArray.push({
           stop_order: stopOrder++,
@@ -121,25 +179,27 @@ export class BookingService {
     stopsArray.push({
       stop_order: stopOrder++,
       stop_type: stop_type.delivery,
-      address: dto.destAddress,
+      address: cleanDestAddress,
       latitude: new Prisma.Decimal(deliveryJson.latitude),
       longitude: new Prisma.Decimal(deliveryJson.longitude),
       otp: deliveryJson.otp,
       status: stop_status.pending,
     });
 
-    // Ensure shipper profile exists in database
-    if (dto.shipperId) {
+    // Ensure shipper profile exists in database if valid UUID
+    let validShipperId: string | null = null;
+    if (this.isValidUuid(dto.shipperId)) {
+      validShipperId = dto.shipperId!;
       const shipperProfile = await this.prisma.profiles.findUnique({
-        where: { id: dto.shipperId },
+        where: { id: validShipperId },
       }).catch(() => null);
 
       if (!shipperProfile) {
         await this.prisma.users.upsert({
-          where: { id: dto.shipperId },
+          where: { id: validShipperId },
           create: {
-            id: dto.shipperId,
-            email: `${dto.shipperId}@phone.routex`,
+            id: validShipperId,
+            email: `${validShipperId}@phone.routex`,
             aud: 'authenticated',
             role: 'authenticated',
           },
@@ -147,12 +207,12 @@ export class BookingService {
         }).catch(() => null);
 
         await this.prisma.profiles.upsert({
-          where: { id: dto.shipperId },
+          where: { id: validShipperId },
           create: {
-            id: dto.shipperId,
+            id: validShipperId,
             first_name: 'Shipper',
             last_name: 'Account',
-            email: `${dto.shipperId}@phone.routex`,
+            email: `${validShipperId}@phone.routex`,
             role: user_role.shipper,
             is_active: true,
           },
@@ -166,12 +226,12 @@ export class BookingService {
       booking = await this.prisma.booking.create({
         data: {
           booking_reference: bookingRef,
-          shipper_id: dto.shipperId,
-          cargo_description: dto.loadType,
+          shipper_id: validShipperId,
+          cargo_description: cargoDescription,
           estimated_weight_kg: new Prisma.Decimal(payloadKg),
           pickup_address: pickupJson,
           delivery_address: deliveryJson,
-          quoted_price: new Prisma.Decimal(dto.price),
+          quoted_price: new Prisma.Decimal(priceNum),
           currency: 'INR',
           status: booking_status.searching,
           booking_stops: {
@@ -179,22 +239,25 @@ export class BookingService {
           },
         },
       });
-    } catch (err) {
+    } catch (err: any) {
       // Fallback create without nested booking_stops if schema constraint fails
+      this.logger.warn(`[BOOKINGS] Primary booking creation with nested stops failed: ${err.message}. Retrying without nested stops.`);
       booking = await this.prisma.booking.create({
         data: {
           booking_reference: bookingRef,
-          shipper_id: dto.shipperId,
-          cargo_description: dto.loadType,
+          shipper_id: validShipperId,
+          cargo_description: cargoDescription,
           estimated_weight_kg: new Prisma.Decimal(payloadKg),
           pickup_address: pickupJson,
           delivery_address: deliveryJson,
-          quoted_price: new Prisma.Decimal(dto.price),
+          quoted_price: new Prisma.Decimal(priceNum),
           currency: 'INR',
           status: booking_status.searching,
         },
       });
     }
+
+    this.logger.log(`[BOOKINGS] Booking successfully created: ${booking.booking_reference} (ID: ${booking.id})`);
 
     // Broadcast that a new booking is searching for a driver
     this.trackingGateway.emitBookingStatus(booking.id, booking.status);
@@ -289,42 +352,57 @@ export class BookingService {
   }
 
   async findAll() {
-    return this.prisma.booking.findMany({
-      include: {
-        profiles: true, // Shipper profile
-        booking_stops: {
-          orderBy: { stop_order: 'asc' },
-        },
-        drivers: {
-          include: {
-            profiles: true,
+    this.logger.log('[BOOKINGS] Querying shipments queue from database...');
+    try {
+      const bookings = await this.prisma.booking.findMany({
+        include: {
+          profiles: true, // Shipper profile
+          booking_stops: {
+            orderBy: { stop_order: 'asc' },
+          },
+          drivers: {
+            include: {
+              profiles: true,
+            },
           },
         },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
-    });
+        orderBy: {
+          created_at: 'desc',
+        },
+      });
+      this.logger.log(`[BOOKINGS] Successfully fetched ${bookings.length} shipments`);
+      return bookings;
+    } catch (err: any) {
+      this.logger.error(`[BOOKINGS] Database query in findAll failed: ${err.message}`, err.stack);
+      throw err;
+    }
   }
 
   async findOne(id: string) {
-    const booking = await this.prisma.booking.findUnique({
-      where: { id },
-      include: {
-        profiles: true,
-        booking_stops: {
-          orderBy: { stop_order: 'asc' },
-        },
-        drivers: {
-          include: {
-            profiles: true,
+    this.logger.log(`[BOOKINGS] Querying booking ${id} from database...`);
+    try {
+      const booking = await this.prisma.booking.findUnique({
+        where: { id },
+        include: {
+          profiles: true,
+          booking_stops: {
+            orderBy: { stop_order: 'asc' },
           },
+          drivers: {
+            include: {
+              profiles: true,
+            },
+          },
+          tracking_logs: true,
         },
-        tracking_logs: true,
-      },
-    });
-    if (!booking) throw new NotFoundException('Booking not found');
-    return booking;
+      });
+      if (!booking) throw new NotFoundException('Booking not found');
+      return booking;
+    } catch (err: any) {
+      if (err instanceof NotFoundException) throw err;
+      this.logger.error(`[BOOKINGS] Database query in findOne failed for ID ${id}: ${err.message}`, err.stack);
+      throw err;
+    }
   }
 
   private safeParseJson(value: any): Record<string, any> {

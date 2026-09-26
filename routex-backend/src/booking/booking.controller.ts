@@ -7,6 +7,7 @@ import {
   Param,
   UseGuards,
   Request,
+  Logger,
 } from '@nestjs/common';
 import { BookingService, CreateBookingDto } from './booking.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -55,6 +56,8 @@ class EpodDto {
 @UseGuards(JwtAuthGuard)
 @Controller(['bookings', 'booking'])
 export class BookingController {
+  private readonly logger = new Logger(BookingController.name);
+
   constructor(private readonly bookingService: BookingService) {}
 
   @Post()
@@ -62,8 +65,26 @@ export class BookingController {
     summary: 'Create a new cargo shipment booking',
   })
   @ApiResponse({ status: 201, description: 'Booking created successfully.' })
-  async create(@Body() dto: CreateBookingDto) {
-    return this.bookingService.create(dto);
+  async create(@Body() dto: CreateBookingDto, @Request() req: any) {
+    this.logger.log(
+      `[BOOKINGS API] POST /api/bookings invoked by user: ${req?.user?.id || 'anonymous'}, body: ${JSON.stringify(dto)}`,
+    );
+    if (!dto.shipperId && req?.user?.id) {
+      dto.shipperId = req.user.id;
+    }
+    try {
+      const result = await this.bookingService.create(dto);
+      this.logger.log(
+        `[BOOKINGS API] POST /api/bookings completed: Ref ${result.booking_reference}, ID: ${result.id}`,
+      );
+      return result;
+    } catch (err: any) {
+      this.logger.error(
+        `[BOOKINGS API] POST /api/bookings failed with error: ${err.message}`,
+        err.stack,
+      );
+      throw err;
+    }
   }
 
   @Get('available')
@@ -73,6 +94,7 @@ export class BookingController {
     description: 'List of available shipments returned.',
   })
   async getAvailable(@Request() req: any) {
+    this.logger.log(`[BOOKINGS API] GET /api/bookings/available invoked by user: ${req?.user?.id || 'anonymous'}`);
     return this.bookingService.findAvailable(req.user?.id);
   }
 
@@ -80,6 +102,7 @@ export class BookingController {
   @ApiOperation({ summary: 'Accept a cargo shipment booking' })
   @ApiResponse({ status: 200, description: 'Booking successfully accepted.' })
   async acceptBooking(@Param('id') id: string, @Request() req: any) {
+    this.logger.log(`[BOOKINGS API] POST /api/bookings/${id}/accept invoked by user: ${req?.user?.id || 'anonymous'}`);
     return this.bookingService.assignDriver(id, req.user.id);
   }
 
@@ -87,14 +110,26 @@ export class BookingController {
   @ApiOperation({ summary: 'Reject a booking' })
   @ApiResponse({ status: 200, description: 'Booking rejected successfully.' })
   rejectBooking(@Param('id') id: string) {
+    this.logger.log(`[BOOKINGS API] POST /api/bookings/${id}/reject invoked`);
     return { success: true, bookingId: id };
   }
 
   @Get()
   @ApiOperation({ summary: 'Get all shipments queue' })
   @ApiResponse({ status: 200, description: 'List of shipments returned.' })
-  async findAll() {
-    return this.bookingService.findAll();
+  async findAll(@Request() req: any) {
+    this.logger.log(`[BOOKINGS API] GET /api/bookings invoked by user: ${req?.user?.id || 'anonymous'}`);
+    try {
+      const results = await this.bookingService.findAll();
+      this.logger.log(`[BOOKINGS API] GET /api/bookings successfully returned ${results.length} bookings`);
+      return results;
+    } catch (err: any) {
+      this.logger.error(
+        `[BOOKINGS API] GET /api/bookings failed with error: ${err.message}`,
+        err.stack,
+      );
+      throw err;
+    }
   }
 
   @Get(':id')
@@ -102,7 +137,16 @@ export class BookingController {
   @ApiResponse({ status: 200, description: 'Booking returned.' })
   @ApiResponse({ status: 404, description: 'Booking not found.' })
   async findOne(@Param('id') id: string) {
-    return this.bookingService.findOne(id);
+    this.logger.log(`[BOOKINGS API] GET /api/bookings/${id} invoked`);
+    try {
+      return await this.bookingService.findOne(id);
+    } catch (err: any) {
+      this.logger.error(
+        `[BOOKINGS API] GET /api/bookings/${id} failed: ${err.message}`,
+        err.stack,
+      );
+      throw err;
+    }
   }
 
   @Put(':id/assign')

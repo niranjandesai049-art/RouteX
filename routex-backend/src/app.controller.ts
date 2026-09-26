@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   ServiceUnavailableException,
+  Logger,
 } from '@nestjs/common';
 import { BookingService, CreateBookingDto } from './booking/booking.service';
 import { AiService } from './ai/ai.service';
@@ -28,6 +29,8 @@ import { Roles } from './auth/roles.decorator';
 
 @Controller()
 export class AppController {
+  private readonly logger = new Logger(AppController.name);
+
   constructor(
     private readonly bookingService: BookingService,
     private readonly aiService: AiService,
@@ -42,14 +45,23 @@ export class AppController {
   @Get('ready')
   async getReadiness() {
     try {
+      const start = Date.now();
       await this.prisma.$queryRaw`SELECT 1`;
+      const latencyMs = Date.now() - start;
       return {
         status: 'ready',
         database: 'connected',
+        latencyMs,
         timestamp: new Date().toISOString(),
       };
-    } catch {
-      throw new ServiceUnavailableException('Database connection failed');
+    } catch (err: any) {
+      this.logger.error(
+        `[READY] Database connection failed: ${err.message}`,
+        err.stack,
+      );
+      throw new ServiceUnavailableException(
+        `Database connection failed: ${err.message}`,
+      );
     }
   }
 
