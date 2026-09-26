@@ -322,49 +322,6 @@ export class AppController {
     });
   }
 
-  // --- Bookings & Shipments ---
-  @Post('bookings')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(user_role.shipper, user_role.super_admin)
-  createBooking(@Body() dto: CreateBookingDto) {
-    return this.bookingService.create(dto);
-  }
-
-  @Get('bookings')
-  @UseGuards(JwtAuthGuard)
-  getAllBookings() {
-    return this.bookingService.findAll();
-  }
-
-  @Get('bookings/:id')
-  @UseGuards(JwtAuthGuard)
-  getBookingById(@Param('id') id: string) {
-    return this.bookingService.findOne(id);
-  }
-
-  @Put('bookings/:id/assign')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(user_role.driver, user_role.fleet_owner, user_role.super_admin)
-  assignDriver(@Param('id') id: string, @Body() body: { driverId: string }) {
-    return this.bookingService.assignDriver(id, body.driverId);
-  }
-
-  @Put('bookings/:id/status')
-  @UseGuards(JwtAuthGuard)
-  updateStatus(
-    @Param('id') id: string,
-    @Body() body: { status: booking_status },
-  ) {
-    return this.bookingService.updateStatus(id, body.status);
-  }
-
-  @Post('bookings/:id/epod')
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(user_role.driver, user_role.super_admin)
-  submitEpod(@Param('id') id: string, @Body() body: { signature: string }) {
-    return this.bookingService.submitEpod(id, body.signature);
-  }
-
   // --- Dashboard Real DB KPIs & Metrics ---
   @Get('dashboard/shipper')
   @UseGuards(JwtAuthGuard)
